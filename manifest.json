@@ -1,0 +1,10 @@
+{
+	"id": "linkvault",
+	"name": "LinkVault",
+	"version": "1.0.0",
+	"minAppVersion": "1.4.0",
+	"description": "Save and categorise links into your knowledge base using AI. Supports Claude, Ollama, and OpenRouter.",
+	"author": "Farooq Shaikh",
+	"authorUrl": "https://github.com/calghar",
+	"isDesktopOnly": true
+}

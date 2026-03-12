@@ -1,0 +1,24 @@
+# Build output
+main.js
+src/**/*.js
+
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+
+# Temporary files
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.c*
