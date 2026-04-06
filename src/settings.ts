@@ -344,7 +344,7 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 		new Setting(promptsEl)
 			.setName("File match prompt")
 			.setDesc(
-				"Prompt to match content to a KB file. Variables: {{title}}, {{keypoints}}, {{fileList}}"
+				"Prompt to match content to a Kb file. Variables: {{title}}, {{keypoints}}, {{fileList}}"
 			)
 			.addTextArea((text) => {
 				text.inputEl.rows = 8;
