@@ -39,7 +39,11 @@ function extractJSON(raw: string): Record<string, string> | null {
 	try {
 		const parsed: unknown = JSON.parse(match[0]);
 		if (typeof parsed !== "object" || parsed === null) return null;
-		return parsed as Record<string, string>;
+		return Object.fromEntries(
+			Object.entries(parsed as Record<string, unknown>).map(
+				([k, v]) => [k, typeof v === "string" ? v : String(v)]
+			)
+		);
 	} catch {
 		return null;
 	}
