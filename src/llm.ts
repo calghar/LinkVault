@@ -99,7 +99,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 			const delay =
 				BASE_DELAY * Math.pow(2, attempt) +
 				Math.random() * 500;
-			await new Promise((r) => setTimeout(r, delay));
+			await new Promise((r) => activeWindow.setTimeout(r, delay));
 		}
 	}
 	throw lastError ?? new LLMError("Unknown error after retries", "server_error");
@@ -149,7 +149,8 @@ class AnthropicProvider implements LLMProvider {
 					JSON.stringify(response.json ?? response.text)
 				);
 			}
-			const text = response.json?.content?.[0]?.text;
+			const json = response.json as { content?: { text?: string }[] } | undefined;
+			const text = json?.content?.[0]?.text;
 			if (typeof text !== "string") {
 				throw new LLMError("Unexpected Anthropic response format.", "server_error");
 			}
@@ -225,7 +226,8 @@ class OllamaProvider implements LLMProvider {
 					JSON.stringify(response.json ?? response.text)
 				);
 			}
-			const text = response.json?.response;
+			const json = response.json as { response?: string } | undefined;
+			const text = json?.response;
 			if (typeof text !== "string") {
 				throw new LLMError("Unexpected Ollama response format.", "server_error");
 			}
@@ -299,7 +301,8 @@ class OpenRouterProvider implements LLMProvider {
 					JSON.stringify(response.json ?? response.text)
 				);
 			}
-			const text = response.json?.choices?.[0]?.message?.content;
+			const json = response.json as { choices?: { message?: { content?: string } }[] } | undefined;
+			const text = json?.choices?.[0]?.message?.content;
 			if (typeof text !== "string") {
 				throw new LLMError("Unexpected OpenRouter response format.", "server_error");
 			}

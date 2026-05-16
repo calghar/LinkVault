@@ -22,9 +22,11 @@ export default class LinkVaultPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
+		const loaded: Partial<LinkVaultSettings> =
+			(await this.loadData()) as Partial<LinkVaultSettings> ?? {};
 		this.settings = {
 			...DEFAULT_SETTINGS,
-			...(await this.loadData()),
+			...loaded,
 		};
 	}
 

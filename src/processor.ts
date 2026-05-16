@@ -37,7 +37,9 @@ function extractJSON(raw: string): Record<string, string> | null {
 	const match = /\{[\s\S]*?\}/.exec(raw);
 	if (!match) return null;
 	try {
-		return JSON.parse(match[0]);
+		const parsed: unknown = JSON.parse(match[0]);
+		if (typeof parsed !== "object" || parsed === null) return null;
+		return parsed as Record<string, string>;
 	} catch {
 		return null;
 	}
@@ -161,8 +163,8 @@ export async function processLink(
 	const cache = app.metadataCache.getFileCache(file);
 	const fm = cache?.frontmatter;
 
-	const url = fm?.url ?? "";
-	const fallbackTitle = fm?.title ?? file.basename;
+	const url: string = typeof fm?.url === "string" ? fm.url : "";
+	const fallbackTitle: string = typeof fm?.title === "string" ? fm.title : file.basename;
 	const truncatedContent = noteContent.slice(0, settings.contentTruncateChars);
 
 	log(settings, "Processing file:", file.path);
