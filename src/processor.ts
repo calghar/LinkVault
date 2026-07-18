@@ -173,7 +173,7 @@ export async function processLink(
 
 	log(settings, "Processing file:", file.path);
 
-	const provider = createProvider(settings);
+	const provider = createProvider(app, settings);
 
 	const metadata = await extractMetadata(
 		provider, settings, truncatedContent, fallbackTitle

@@ -1,5 +1,6 @@
-import { requestUrl } from "obsidian";
+import { App, requestUrl } from "obsidian";
 import type { LinkVaultSettings } from "./settings";
+import { readApiKey } from "./secrets";
 
 export type LLMErrorCode =
 	| "auth_failed"
@@ -7,7 +8,8 @@ export type LLMErrorCode =
 	| "network_error"
 	| "server_error"
 	| "model_not_found"
-	| "context_limit";
+	| "context_limit"
+	| "secret_unavailable";
 
 export class LLMError extends Error {
 	code: LLMErrorCode;
@@ -105,8 +107,32 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 	throw lastError ?? new LLMError("Unknown error after retries", "server_error");
 }
 
+// Resolves the provider API key from the secret store. Distinguishes a missing key
+// ("not configured") from a store that fails to read ("could not read stored key").
+function resolveApiKey(app: App, providerName: string): string {
+	let key: string | null;
+	try {
+		key = readApiKey(app);
+	} catch (err) {
+		throw new LLMError(
+			`Could not read stored ${providerName} key: ${err instanceof Error ? err.message : String(err)}`,
+			"secret_unavailable"
+		);
+	}
+	if (key === null) {
+		throw new LLMError(
+			`${providerName} API key is not configured.`,
+			"auth_failed"
+		);
+	}
+	return key;
+}
+
 class AnthropicProvider implements LLMProvider {
-	constructor(private readonly settings: LinkVaultSettings) {}
+	constructor(
+		private readonly app: App,
+		private readonly settings: LinkVaultSettings
+	) {}
 
 	private get baseUrl(): string {
 		return (
@@ -116,12 +142,7 @@ class AnthropicProvider implements LLMProvider {
 	}
 
 	async ask(prompt: string): Promise<string> {
-		if (!this.settings.apiKey) {
-			throw new LLMError(
-				"Anthropic API key is not configured.",
-				"auth_failed"
-			);
-		}
+		const apiKey = resolveApiKey(this.app, "Anthropic");
 		return withRetry(async () => {
 			let response;
 			try {
@@ -130,7 +151,7 @@ class AnthropicProvider implements LLMProvider {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						"x-api-key": this.settings.apiKey,
+						"x-api-key": apiKey,
 						"anthropic-version": "2023-06-01",
 					},
 					body: JSON.stringify({
@@ -159,12 +180,7 @@ class AnthropicProvider implements LLMProvider {
 	}
 
 	async testConnection(): Promise<boolean> {
-		if (!this.settings.apiKey) {
-			throw new LLMError(
-				"Anthropic API key is not configured.",
-				"auth_failed"
-			);
-		}
+		const apiKey = resolveApiKey(this.app, "Anthropic");
 		let response;
 		try {
 			response = await requestUrl({
@@ -172,7 +188,7 @@ class AnthropicProvider implements LLMProvider {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					"x-api-key": this.settings.apiKey,
+					"x-api-key": apiKey,
 					"anthropic-version": "2023-06-01",
 				},
 				body: JSON.stringify({
@@ -257,7 +273,10 @@ class OllamaProvider implements LLMProvider {
 }
 
 class OpenRouterProvider implements LLMProvider {
-	constructor(private readonly settings: LinkVaultSettings) {}
+	constructor(
+		private readonly app: App,
+		private readonly settings: LinkVaultSettings
+	) {}
 
 	private get baseUrl(): string {
 		return (
@@ -267,12 +286,7 @@ class OpenRouterProvider implements LLMProvider {
 	}
 
 	async ask(prompt: string): Promise<string> {
-		if (!this.settings.apiKey) {
-			throw new LLMError(
-				"OpenRouter API key is not configured.",
-				"auth_failed"
-			);
-		}
+		const apiKey = resolveApiKey(this.app, "OpenRouter");
 		return withRetry(async () => {
 			let response;
 			try {
@@ -281,7 +295,7 @@ class OpenRouterProvider implements LLMProvider {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${this.settings.apiKey}`,
+						Authorization: `Bearer ${apiKey}`,
 					},
 					body: JSON.stringify({
 						model: this.settings.model,
@@ -311,12 +325,7 @@ class OpenRouterProvider implements LLMProvider {
 	}
 
 	async testConnection(): Promise<boolean> {
-		if (!this.settings.apiKey) {
-			throw new LLMError(
-				"OpenRouter API key is not configured.",
-				"auth_failed"
-			);
-		}
+		const apiKey = resolveApiKey(this.app, "OpenRouter");
 		let response;
 		try {
 			response = await requestUrl({
@@ -324,7 +333,7 @@ class OpenRouterProvider implements LLMProvider {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.settings.apiKey}`,
+					Authorization: `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({
 					model: this.settings.model,
@@ -346,14 +355,17 @@ class OpenRouterProvider implements LLMProvider {
 	}
 }
 
-export function createProvider(settings: LinkVaultSettings): LLMProvider {
+export function createProvider(
+	app: App,
+	settings: LinkVaultSettings
+): LLMProvider {
 	switch (settings.provider) {
 		case "anthropic":
-			return new AnthropicProvider(settings);
+			return new AnthropicProvider(app, settings);
 		case "ollama":
 			return new OllamaProvider(settings);
 		case "openrouter":
-			return new OpenRouterProvider(settings);
+			return new OpenRouterProvider(app, settings);
 		default: {
 			const _exhaustive: never = settings.provider;
 			throw new Error(`Unknown LLM provider: ${String(_exhaustive)}`);
