@@ -41,7 +41,13 @@ src/
 ├── settings.ts     # Settings interface, defaults, and settings tab UI
 ├── llm.ts          # LLM provider abstraction (Anthropic, Ollama, OpenRouter)
 ├── processor.ts    # Core pipeline: extract → match file → match section → insert
-└── vault.ts        # Vault helpers: find KB files, read sections, insert rows
+├── match.ts        # Parsing of the model's MATCH / NEW / NONE replies
+├── secrets.ts      # API key storage via Obsidian's secret store
+├── prompt-migration.ts  # Replaces inherited prompts from earlier releases
+└── vault.ts        # Vault helpers: find KB files, read sections, insert rows, index region
+
+tests/              # Vitest unit tests for the pure functions
+docs/               # User documentation linked from README.md
 ```
 
 ## Code Style
@@ -61,9 +67,11 @@ src/
    git checkout -b feature/your-feature-name
    ```
 
-2. Make your changes and ensure the project builds:
+2. Make your changes and ensure the project builds and passes:
 
    ```bash
+   npm run lint
+   npm test
    npm run build
    ```
 
@@ -100,7 +108,24 @@ Open an issue using the [feature request template](https://github.com/calghar/Li
 
 ## Tests
 
-There are no automated tests yet. Test manually in an Obsidian vault with the plugin loaded. Enable debug mode for detailed console output.
+```bash
+npm test
+```
+
+Tests live in `tests/` and run under [Vitest](https://vitest.dev/). They cover the pure
+functions only — reply parsing, name validation, table and note construction, URL
+normalisation, and the managed index region. Anything needing a live `App` or an LLM is left
+to manual testing: mocking those would test the mock rather than the plugin.
+
+`tests/obsidian.stub.ts` stands in for the `obsidian` module, which only exists inside the
+app; `vitest.config.ts` aliases the import to it.
+
+A test earns its place by failing when a real bug is reintroduced. Prefer a case drawn from
+an actual defect — the reply that merely *mentions* a note, the placeholder name that became
+a file — over a case that only restates the implementation.
+
+Still test your changes manually in an Obsidian vault with the plugin loaded; enable debug
+mode for detailed console output.
 
 ## Releasing
 

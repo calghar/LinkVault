@@ -28,9 +28,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Junk KB notes are no longer created from prompt text.** The old prompt ended with a literal example, `NEW: Descriptive-Theme-Name`, and small local models copied it verbatim — producing a note actually named `Descriptive-Theme-Name.md`. Proposed names are now validated (non-empty, length-limited, no path separators, not placeholder text) and an existing note of that name is reused rather than duplicated.
 
+### Documentation
+
+- README trimmed to an overview and split into `docs/` — routing, KB structure, Web Clipper setup, configuration, and troubleshooting each have their own page. The minimum Obsidian version badge said 1.4.0; the plugin has required 1.11.4 since the secret store landed.
+
+### Internal
+
+- Unit tests under `tests/`, run with `npm test`. They cover the pure functions — reply parsing, name validation, table and note construction, URL normalisation, and the managed index region — and were checked by reintroducing three past bugs to confirm each is caught. `@types/node` moved from the template's `^16` pin to `^22`, matching the Node version Obsidian actually ships.
+
 ### Planned
 
-- **Routing confirmation** — a dialog offering candidate notes and sections when a match is not confident, replacing today's "left in the Inbox" behaviour.
+- **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.
 - **MLX provider** — native Apple Silicon inference, typically faster than the llama.cpp backend for local models.
 - **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
 
