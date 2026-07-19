@@ -1,6 +1,6 @@
 {
 	"name": "linkvault",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Save and categorise links into your knowledge base using AI",
 	"main": "main.js",
 	"scripts": {

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Planned
+
+- **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.
+- **MLX provider** — native Apple Silicon inference, typically faster than the llama.cpp backend for local models.
+- **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
+
+## [1.2.0] - 2026-07-19
+
 ### Added
 
 - **Auto-update KB index** — an auto-generated listing of your KB files (note, H2 sections, and link count) is maintained inside a marker-delimited managed region of the index note. Content outside the markers is never touched. Refreshes automatically when processing a link creates a new KB file, and on demand via the new **"Rebuild KB index"** command.
@@ -35,12 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Internal
 
 - Unit tests under `tests/`, run with `npm test`. They cover the pure functions — reply parsing, name validation, table and note construction, URL normalisation, and the managed index region — and were checked by reintroducing three past bugs to confirm each is caught. `@types/node` moved from the template's `^16` pin to `^22`, matching the Node version Obsidian actually ships.
-
-### Planned
-
-- **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.
-- **MLX provider** — native Apple Silicon inference, typically faster than the llama.cpp backend for local models.
-- **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
 
 ## [1.1.0] - 2026-07-18
 
