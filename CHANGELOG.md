@@ -50,7 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Internal
 
-- Release workflow moved from Node 18 to Node 22. `vite@8`, pulled in by the test runner, requires Node 20 or newer, so under Node 18 npm resolved a different dependency tree than the committed lockfile records and `npm ci` refused to install. The release body also stated a minimum Obsidian version of 1.6.6 while the manifest required 1.11.4; it now reads the manifest.
+- Build toolchain moved to `esbuild` 0.28 and the release workflow to Node 22, so the release build installs from the lockfile cleanly.
 - Unit tests under `tests/`, run with `npm test`. They cover the pure functions — reply parsing, name validation, table and note construction, URL normalisation, and the managed index region — and were checked by reintroducing three past bugs to confirm each is caught. `@types/node` moved from the template's `^16` pin to `^22`, matching the Node version Obsidian actually ships.
 
 ## [1.0.0] - 2026-03-20
