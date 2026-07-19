@@ -64,6 +64,10 @@ misrouted links.
 Proposed new-file names are validated before anything is created: non-empty, 60 characters or
 fewer, no path separators, and not leftover placeholder text from a prompt.
 
+If you never edited the prompts, they update automatically when the plugin updates — a stored
+prompt identical to an older shipped default is replaced. Prompts you actually customised are
+never overwritten.
+
 ## KB Index
 
 LinkVault keeps an auto-generated listing of your KB files — each note with its H2 sections and

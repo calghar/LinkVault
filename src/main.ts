@@ -7,6 +7,7 @@ import {
 import { processLink } from "./processor";
 import { rebuildKBIndex } from "./vault";
 import { readApiKey, writeApiKey } from "./secrets";
+import { migratePrompts } from "./prompt-migration";
 
 export default class LinkVaultPlugin extends Plugin {
 	settings: LinkVaultSettings = DEFAULT_SETTINGS;
@@ -37,6 +38,9 @@ export default class LinkVaultPlugin extends Plugin {
 			...DEFAULT_SETTINGS,
 			...(raw as Partial<LinkVaultSettings>),
 		};
+		if (migratePrompts(this.settings)) {
+			await this.saveSettings();
+		}
 	}
 
 	// One-time migration: move a legacy plaintext apiKey out of data.json into the
