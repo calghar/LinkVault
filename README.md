@@ -25,6 +25,7 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
 - Three-tier fuzzy matching (exact, case-insensitive, fallback) so links always land somewhere
 - Creates new KB files when no existing file fits the content
+- Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
 - Debug mode for inspecting raw LLM responses
@@ -39,6 +40,26 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
    - **Match section** — picks the best H2 section within that file
 4. A new table row is inserted into the matched section
 5. The inbox note is moved to trash (configurable)
+
+## KB Index
+
+LinkVault keeps an auto-generated listing of your KB files — each note with its H2 sections and
+link count — inside your index note. The listing lives in a marker-delimited **managed region**:
+
+```markdown
+<!-- BEGIN LinkVault index (auto-generated — do not edit inside) -->
+| Note | Sections | Links |
+| ---- | -------- | ----- |
+| [[AI-Security]] | Adversarial ML, Prompt Injection | 27 |
+<!-- END LinkVault index -->
+```
+
+Everything **outside** those two markers (your title, tags, curated tables, theme groupings) is
+never touched. The region is refreshed automatically whenever processing a link creates a new KB
+file, and on demand via the **"LinkVault: Rebuild KB index"** command. Set which note holds the
+region with the **Index file** setting (default: `Index`); that note is also excluded from AI
+matching so links are never routed into it. If the markers are edited into an invalid state
+(only one present), a rebuild reports the problem and writes nothing.
 
 ## Installation
 
@@ -205,6 +226,7 @@ All providers support a **custom base URL** for proxies or self-hosted endpoints
 | Setting | Description | Default |
 | --- | --- | --- |
 | KB folder | Folder containing KB index files | `Knowledge Base` |
+| Index file | Note whose auto-generated region is maintained; excluded from matching | `Index` |
 | Index exclusions | Comma-separated filenames to exclude from AI matching | `Knowledge Base Index` |
 | Inbox folder | Where clipped notes land | `Inbox` |
 | Table header marker | Table header string to search for | `\| Title \| Link \| Key Points \|` |

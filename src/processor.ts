@@ -9,6 +9,7 @@ import {
 	buildNewKBFile,
 	trashFile,
 	formatTableRow,
+	rebuildKBIndex,
 } from "./vault";
 
 const LOG_PREFIX = "[LinkVault]";
@@ -81,7 +82,7 @@ async function matchKBFile(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
 	metadata: ExtractedMetadata
-): Promise<{ targetFile: TFile; targetFileName: string }> {
+): Promise<{ targetFile: TFile; targetFileName: string; createdNew: boolean }> {
 	const kbFiles = getKBFiles(app, settings);
 	if (kbFiles.length === 0) {
 		throw new Error(`No KB files found in "${settings.kbFolder}" folder.`);
@@ -105,7 +106,7 @@ async function matchKBFile(
 		const filePath = `${settings.kbFolder}/${themeName}.md`;
 		const targetFile = await app.vault.create(filePath, buildNewKBFile(themeName));
 		new Notice(`Created new KB file: ${themeName}`);
-		return { targetFile, targetFileName: themeName };
+		return { targetFile, targetFileName: themeName, createdNew: true };
 	}
 
 	const { matched } = fuzzyMatch(response, fileNames, "KB file");
@@ -113,7 +114,7 @@ async function matchKBFile(
 	if (!found) {
 		throw new Error(`Could not find KB file: ${matched}`);
 	}
-	return { targetFile: found, targetFileName: matched };
+	return { targetFile: found, targetFileName: matched, createdNew: false };
 }
 
 async function matchSection(
@@ -182,10 +183,12 @@ export async function processLink(
 
 	let targetFile: TFile;
 	let targetFileName: string;
+	let createdNew: boolean;
 	try {
 		const result = await matchKBFile(app, provider, settings, metadata);
 		targetFile = result.targetFile;
 		targetFileName = result.targetFileName;
+		createdNew = result.createdNew;
 	} catch (err) {
 		new Notice(
 			`LinkVault: ${err instanceof Error ? err.message : String(err)}`
@@ -205,6 +208,17 @@ export async function processLink(
 		targetContent, sectionName, newRow, settings.headerMarker
 	);
 	await app.vault.modify(targetFile, updatedContent);
+
+	// A new KB file changed the index's file set — refresh it. Best-effort: the row is
+	// already saved, so a refresh failure is reported but never reverses the insert.
+	if (createdNew) {
+		try {
+			await rebuildKBIndex(app, settings);
+		} catch (err) {
+			console.error(LOG_PREFIX, "Index refresh failed:", err);
+			new Notice("LinkVault: link saved, but index refresh failed.");
+		}
+	}
 
 	if (settings.afterProcessing === "trash") {
 		await trashFile(app, file);

@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, Notice } from "obsidian";
+import { App, TFile, TFolder, Notice, normalizePath } from "obsidian";
 import type { LinkVaultSettings } from "./settings";
 
 export function getKBFiles(
@@ -16,6 +16,9 @@ export function getKBFiles(
 			.map((s) => s.trim().toLowerCase())
 			.filter((s) => s.length > 0)
 	);
+	// The index file is never a match target.
+	const indexBase = settings.indexFile.trim().toLowerCase();
+	if (indexBase.length > 0) exclusions.add(indexBase);
 
 	const files: TFile[] = [];
 	collectMarkdownFiles(folder, files);
@@ -139,4 +142,121 @@ export function formatTableRow(
 	const safeUrl = escapeMarkdownUrl(url);
 	const safeKeypoints = escapeTableCell(keypoints);
 	return `| ${safeTitle} | [Link](${safeUrl}) | ${safeKeypoints} |`;
+}
+
+// ---- KB index (auto-generated managed region) ----
+
+export const INDEX_BEGIN =
+	"<!-- BEGIN LinkVault index (auto-generated — do not edit inside) -->";
+export const INDEX_END = "<!-- END LinkVault index -->";
+
+interface IndexEntry {
+	basename: string;
+	sections: string[];
+	links: number;
+}
+
+// Counts table data rows (links) under the header marker across the whole file.
+// A row is a line starting with "|" while inside a table; the separator line is skipped.
+export function countLinks(content: string, headerMarker: string): number {
+	const marker = headerMarker.trim();
+	let count = 0;
+	let inTable = false;
+	for (const line of content.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === marker) {
+			inTable = true;
+			continue;
+		}
+		if (!inTable) continue;
+		if (trimmed.startsWith("|")) {
+			if (/^\|[\s|:-]+\|?$/.test(trimmed)) continue; // separator row
+			count++;
+		} else {
+			inTable = false;
+		}
+	}
+	return count;
+}
+
+// Renders the managed-region body: a table of KB files sorted by basename.
+export function buildIndexBody(entries: IndexEntry[]): string {
+	if (entries.length === 0) return "_No KB files found._";
+
+	const sorted = [...entries].sort((a, b) =>
+		a.basename.toLowerCase().localeCompare(b.basename.toLowerCase())
+	);
+	const rows = sorted.map((e) => {
+		const sections =
+			e.sections.length > 0
+				? e.sections.map((s) => s.replaceAll("|", String.raw`\|`)).join(", ")
+				: "—";
+		return `| [[${e.basename}]] | ${sections} | ${e.links} |`;
+	});
+	return ["| Note | Sections | Links |", "| ---- | -------- | ----- |", ...rows].join(
+		"\n"
+	);
+}
+
+// Splices the managed region into existing index content, preserving everything outside it.
+// ok=false signals malformed markers (only one present, or end before begin) — caller must not write.
+export function writeManagedRegion(
+	existing: string,
+	body: string
+): { text: string; ok: boolean } {
+	const region = `${INDEX_BEGIN}\n${body}\n${INDEX_END}`;
+	const begin = existing.indexOf(INDEX_BEGIN);
+	const end = existing.indexOf(INDEX_END);
+
+	if (begin === -1 && end === -1) {
+		const sep =
+			existing.length === 0 ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+		return { text: existing + sep + region + "\n", ok: true };
+	}
+	if (begin === -1 || end === -1 || end < begin) {
+		return { text: existing, ok: false };
+	}
+	const endClose = end + INDEX_END.length;
+	return {
+		text: existing.slice(0, begin) + region + existing.slice(endClose),
+		ok: true,
+	};
+}
+
+// Regenerates the managed region of the configured index file from current KB files.
+export async function rebuildKBIndex(
+	app: App,
+	settings: LinkVaultSettings
+): Promise<void> {
+	const files = getKBFiles(app, settings);
+	const entries: IndexEntry[] = [];
+	for (const f of files) {
+		const content = await app.vault.cachedRead(f);
+		entries.push({
+			basename: f.basename,
+			sections: getSections(content),
+			links: countLinks(content, settings.headerMarker),
+		});
+	}
+	const body = buildIndexBody(entries);
+	const indexPath = normalizePath(
+		`${settings.kbFolder}/${settings.indexFile}.md`
+	);
+	const existingFile = app.vault.getAbstractFileByPath(indexPath);
+
+	if (existingFile instanceof TFile) {
+		const existing = await app.vault.read(existingFile);
+		const { text, ok } = writeManagedRegion(existing, body);
+		if (!ok) {
+			new Notice(
+				"LinkVault: index markers are malformed — fix them and rebuild. No changes written."
+			);
+			return;
+		}
+		await app.vault.modify(existingFile, text);
+	} else {
+		const { text } = writeManagedRegion("", body);
+		await app.vault.create(indexPath, text);
+	}
+	new Notice(`LinkVault: index rebuilt (${entries.length} KB files).`);
 }

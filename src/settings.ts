@@ -10,6 +10,7 @@ export interface LinkVaultSettings {
 	// Knowledge Base
 	kbFolder: string;
 	kbIndexExclusions: string;
+	indexFile: string;
 	inboxFolder: string;
 	headerMarker: string;
 	afterProcessing: AfterProcessing;
@@ -41,6 +42,7 @@ export const DEFAULT_MODELS: Record<LLMProviderType, string> = {
 export const DEFAULT_SETTINGS: LinkVaultSettings = {
 	kbFolder: "Knowledge Base",
 	kbIndexExclusions: "Knowledge Base Index",
+	indexFile: "Index",
 	inboxFolder: "Inbox",
 	headerMarker: "| Title | Link | Key Points |",
 	afterProcessing: "trash",
@@ -117,6 +119,21 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.kbIndexExclusions)
 					.onChange(async (value) => {
 						this.plugin.settings.kbIndexExclusions = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Index file")
+			.setDesc(
+				"Index note (without extension) whose auto-generated region LinkVault maintains. Excluded from AI matching."
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Index")
+					.setValue(this.plugin.settings.indexFile)
+					.onChange(async (value) => {
+						this.plugin.settings.indexFile = value;
 						await this.plugin.saveSettings();
 					})
 			);
