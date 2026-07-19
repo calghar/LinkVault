@@ -242,8 +242,24 @@ function formatTags(tags: string[]): string {
 export interface NewNoteContext {
 	tags: string[];
 	description: string;
+	section: string;
 	indexFile: string;
 	headerMarker: string;
+}
+
+// Existing notes head their first table with a heading describing the kind of link it holds —
+// "Attack Research", "Key Blogs", "AWS Security" — not a generic one. Falls back to "Overview"
+// when nothing usable was supplied. Pipes would break the table that follows, and a heading is
+// a single line.
+const DEFAULT_SECTION = "Overview";
+
+function sanitizeSection(section: string): string {
+	const cleaned = section
+		.split("\n")[0]
+		.replaceAll("|", "")
+		.replace(/^#+\s*/, "")
+		.trim();
+	return cleaned.length > 0 ? cleaned : DEFAULT_SECTION;
 }
 
 // Builds a new KB note in the same shape as the hand-written ones: title, tag line, a backlink
@@ -269,7 +285,7 @@ export function buildNewKBFile(
 		"",
 		"---",
 		"",
-		"## Overview",
+		`## ${sanitizeSection(context.section)}`,
 		"",
 		context.headerMarker,
 		separator,

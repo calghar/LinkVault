@@ -122,6 +122,7 @@ interface DerivedNote {
 	name: string;
 	tags: string[];
 	description: string;
+	section: string;
 }
 
 // Describes a new KB note for the link: a broad subject name plus the tags and one-line
@@ -155,6 +156,7 @@ async function deriveNewNote(
 			name,
 			tags: parseTags(parsed?.tags),
 			description: parsed?.description ?? "",
+			section: parsed?.section ?? "",
 		};
 	} catch (err) {
 		console.error(LOG_PREFIX, "Naming a new note failed:", err);
@@ -197,7 +199,8 @@ async function resolveNewNote(
 
 	if (proposedName !== null) {
 		const check = validateNewName(proposedName, existingBasenames);
-		if (check.ok) return { name: check.name, tags: [], description: "" };
+		if (check.ok)
+			return { name: check.name, tags: [], description: "", section: "" };
 		log(settings, "Proposed name rejected:", proposedName, check.reason);
 	}
 
@@ -220,6 +223,7 @@ async function createKBFile(
 		buildNewKBFile(note.name, {
 			tags: note.tags,
 			description: note.description,
+			section: note.section,
 			indexFile: settings.indexFile,
 			headerMarker: settings.headerMarker,
 		})

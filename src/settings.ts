@@ -112,10 +112,14 @@ the link belongs to — never this one link, and never the event it reports.
 
 Ask yourself: "what shelf does this belong on?" A link about one company's valuation goes on
 the shelf for that company's industry, not a shelf called Valuations. A link about one CVE goes
-on the shelf for that technology, not a shelf called Vulnerabilities.
+on the shelf for that technology, not a shelf called Vulnerabilities. Leave out any word naming
+an event, a metric, or a piece of analysis.
+
+Also give a heading for the note's first section, describing what kind of link this is. Existing
+notes use headings like "Attack Research", "Tools & Monitoring", "Key Blogs", "Industry Reports".
 
 Reply ONLY with valid JSON — no markdown fences, no explanation:
-{"name": "Broad-Subject-Name", "tags": ["tag-one","tag-two","tag-three"], "description": "one line saying what this note collects"}`,
+{"name": "Broad-Subject-Name", "tags": ["tag-one","tag-two","tag-three"], "description": "one line saying what this note collects", "section": "Section Heading"}`,
 
 	contentTruncateChars: 3000,
 	debugMode: false,

@@ -23,9 +23,9 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 ## Features
 
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
-- Links the model can't confidently place are left in your Inbox rather than filed somewhere wrong
+- Never files a link into a note the model didn't actually choose
+- Creates a new note, named after the subject area, when nothing existing fits — matching the structure of your hand-written notes
 - Skips links already filed anywhere in your KB, and tells you where they live
-- Creates new KB files when no existing file fits the content, with the proposed name validated first
 - Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
@@ -62,9 +62,12 @@ NEW: <short hyphenated topic name>     (file match only)
 NONE
 ```
 
-`NONE`, an unrecognised name, or an unparseable reply all count as "not confident". If you've
-customised a prompt from an older release, a reply that *exactly* names a file or section is still
-accepted — but a reply that merely contains a name is not, since that was the guess behind
+`NONE`, an unrecognised name, or an unparseable reply all mean "no existing note fits". For the
+file match that starts the new-note flow below; for the section match it falls back to the note's
+first section.
+
+If you've customised a prompt from an older release, a reply that *exactly* names a file or section
+is still accepted — but a reply that merely contains a name is not, since that was the guess behind
 misrouted links.
 
 ### New notes
@@ -89,14 +92,16 @@ New notes follow the same structure as hand-written ones:
 
 ---
 
-## Overview
+## Launch Providers & Operators
 
 | Title | Link | Key Points |
 |------|------|------|
 ```
 
-The backlink points at your configured index note, and the table header is your configured header
-marker, so a customised marker still produces a valid table.
+The section heading describes the kind of link it holds, matching how your existing notes are
+organised, rather than a fixed "Overview". The backlink points at your configured index note, and
+the table header is your configured header marker, so a customised marker still produces a valid
+table.
 
 If you never edited the prompts, they update automatically when the plugin updates — a stored
 prompt identical to an older shipped default is replaced. Prompts you actually customised are
