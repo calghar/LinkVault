@@ -4,136 +4,40 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 
 ![GitHub Release](https://img.shields.io/github/v/release/calghar/LinkVault)
 ![License](https://img.shields.io/github/license/calghar/LinkVault)
-![Obsidian Minimum Version](https://img.shields.io/badge/obsidian-%3E%3D1.4.0-blueviolet)
-
-## Table of Contents
-
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Installation](#installation)
-- [Web Clipper Setup](#web-clipper-setup)
-- [KB File Structure](#kb-file-structure)
-- [Quick Start](#quick-start)
-- [Providers](#providers)
-- [Settings](#settings)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [Changelog](#changelog)
+![Obsidian Minimum Version](https://img.shields.io/badge/obsidian-%3E%3D1.11.4-blueviolet)
 
 ## Features
 
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
 - Never files a link into a note the model didn't actually choose
 - Creates a new note, named after the subject area, when nothing existing fits — matching the structure of your hand-written notes
-- Skips links already filed anywhere in your KB, and tells you which note holds them — one URL lives in one note, so filing the same link into a second note has to be done by hand
-- Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
+- Skips links already filed anywhere in your KB, and tells you which note holds them
+- Maintains an auto-generated index of your KB files and sections, never touching your curated notes
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
 - Debug mode for inspecting raw LLM responses
 
-## How It Works
+## How it works
 
-1. You clip a web page into your **Inbox** folder (via [Obsidian Web Clipper](https://obsidian.md/clipper) or any method)
-2. Open the clipped note and run **"LinkVault: Process Link to KB"** from the command palette
-3. The plugin makes AI calls:
-   - **Extract** — pulls a title and one-sentence summary from the note
-   - **Match file** — picks a KB note, proposes a new one, or declines
-   - **Name new note** — only when nothing matched: names a note from the link's content
-   - **Match section** — picks an H2 section within the chosen note
+1. Clip a web page into your **Inbox** folder, via [Obsidian Web Clipper](https://obsidian.md/clipper) or any other method
+2. Open the clipped note and run **"LinkVault: Process link to KB"** from the command palette
+3. LinkVault extracts a title and summary, then picks a KB note and a section within it
 4. If the URL is already filed anywhere in your KB, you're told where and nothing is written
-5. A new table row is inserted into the matched section
-6. The inbox note is moved to trash (configurable)
+5. A table row is inserted, and the inbox note is moved to trash (configurable)
 
-**Choosing the note never guesses.** If no existing note covers the link, LinkVault creates one
-rather than filing it somewhere approximate. A link is left in your Inbox only when no usable name
-can be produced.
-
-**Choosing the section does fall back.** If the note is clear but no section fits, the link goes
-into that note's first section and you're told — a row in the wrong section is a two-second fix,
-unlike a link filed under the wrong topic.
-
-### The match contract
-
-Match prompts ask the model to reply with exactly one line:
-
-```
-MATCH: <exact name from the list>
-NEW: <short hyphenated topic name>     (file match only)
-NONE
-```
-
-`NONE`, an unrecognised name, or an unparseable reply all mean "no existing note fits". For the
-file match that starts the new-note flow below; for the section match it falls back to the note's
-first section.
-
-If you've customised a prompt from an older release, a reply that *exactly* names a file or section
-is still accepted — but a reply that merely contains a name is not, since that was the guess behind
-misrouted links.
-
-### New notes
-
-A created note is named after the **subject area** the link belongs to, never the link itself. The
-naming step is given your existing note names so it matches their level of generality — a link
-about one company's valuation creates `Space-Industry`, not `SpaceX-Valuation`, leaving a note that
-collects further links on that subject.
-
-Names are normalised to `Title-Case-Hyphenated` and validated before anything is created:
-non-empty, 60 characters or fewer, no path separators, and not leftover placeholder text. A name
-matching an existing note reuses that note rather than creating a second one.
-
-New notes follow the same structure as hand-written ones:
-
-```markdown
-# Space Industry
-
-#space #aerospace #launch-vehicles
-
-[[Index]] → Links on the commercial space industry, launch providers, and satellite operators.
-
----
-
-## Launch Providers & Operators
-
-| Title | Link | Key Points |
-|------|------|------|
-```
-
-The section heading describes the kind of link it holds, matching how your existing notes are
-organised, rather than a fixed "Overview". The backlink points at your configured index note, and
-the table header is your configured header marker, so a customised marker still produces a valid
-table.
-
-If you never edited the prompts, they update automatically when the plugin updates — a stored
-prompt identical to an older shipped default is replaced. Prompts you actually customised are
-never overwritten.
-
-## KB Index
-
-LinkVault keeps an auto-generated listing of your KB files — each note with its H2 sections and
-link count — inside your index note. The listing lives in a marker-delimited **managed region**:
-
-```markdown
-<!-- BEGIN LinkVault index (auto-generated — do not edit inside) -->
-| Note | Sections | Links |
-| ---- | -------- | ----- |
-| [[AI-Security]] | Adversarial ML, Prompt Injection | 27 |
-<!-- END LinkVault index -->
-```
-
-Everything **outside** those two markers (your title, tags, curated tables, theme groupings) is
-never touched. The region is refreshed automatically whenever processing a link creates a new KB
-file, and on demand via the **"LinkVault: Rebuild KB index"** command. Set which note holds the
-region with the **Index file** setting (default: `Index`); that note is also excluded from AI
-matching so links are never routed into it. If the markers are edited into an invalid state
-(only one present), a rebuild reports the problem and writes nothing.
+If no existing note covers the link, LinkVault creates one named after the subject area
+rather than filing it somewhere approximate. See [Routing](docs/routing.md) for what it does
+and doesn't guess at.
 
 ## Installation
 
-### From Community Plugins (recommended)
+### From community plugins (recommended)
 
-1. Open **Settings → Community Plugins → Browse**
+1. Open **Settings → Community plugins → Browse**
 2. Search for **"LinkVault"**
 3. Click **Install**, then **Enable**
+
+Requires Obsidian 1.11.4 or later, which introduced the secret store used for API keys.
 
 ### Manual / BRAT
 
@@ -141,7 +45,7 @@ matching so links are never routed into it. If the markers are edited into an in
 2. In BRAT settings, add `calghar/LinkVault`
 3. Enable the plugin
 
-### Build from Source
+### Build from source
 
 ```bash
 git clone https://github.com/calghar/LinkVault.git
@@ -152,189 +56,38 @@ npm run build
 
 Copy `main.js`, `manifest.json`, and `styles.css` into your vault at `.obsidian/plugins/linkvault/`.
 
-## Web Clipper Setup
-
-LinkVault processes notes from your Inbox folder. The easiest way to get links into your inbox is with [Obsidian Web Clipper](https://obsidian.md/clipper).
-
-The plugin reads two frontmatter properties from clipped notes:
-
-- **`url`** (required) — the source URL, used for the link column in the KB table
-- **`title`** (optional) — used as a fallback title if the AI extraction fails
-
-### Recommended template
-
-In the Web Clipper extension, create a new template with these settings:
-
-| Setting | Value |
-| --- | --- |
-| **Name** | LinkVault |
-| **Path** | `Inbox` (must match your LinkVault Inbox folder setting) |
-| **Note name** | `{{date\|date:"YYYY-MM-DD"}} - {{title\|safe_name}}` |
-
-**Properties:**
-
-| Name | Type | Value |
-| --- | --- | --- |
-| `date` | Date | `{{date}}` |
-| `url` | Text | `{{url}}` |
-| `title` | Text | `{{title}}` |
-
-**Note content:**
-
-```text
-# {{title}}
-
-{{content}}
-
-[Source]({{url}})
-```
-
-The note content is what the AI reads to extract a summary and determine which KB file and section the link belongs to. Richer content (full article text) produces better matching than a bare URL.
-
-## KB File Structure
-
-Each KB file represents a topic and contains H2 sections with link tables. For example:
-
-```markdown
-# System Design
-
-#architecture #distributed-systems
-
----
-
-## Scalability & Load Balancing
-
-| Title | Link | Key Points |
-|-------|------|-----------|
-| Existing entry | [Link](https://example.com) | Summary of the article |
-
----
-
-## Caching Strategies
-
-| Title | Link | Key Points |
-|-------|------|-----------|
-```
-
-```markdown
-# Photography
-
-#photography #composition
-
----
-
-## Landscape & Nature
-
-| Title | Link | Key Points |
-|-------|------|-----------|
-```
-
-```markdown
-# Personal Finance
-
-#finance #investing
-
----
-
-## Index Funds & ETFs
-
-| Title | Link | Key Points |
-|-------|------|-----------|
-```
-
-- Each file can have multiple H2 sections, each with its own table
-- Tables must use the `| Title | Link | Key Points |` header (configurable)
-- New rows are inserted after the separator row of the matched section
-
-## Quick Start
+## Quick start
 
 1. Open **Settings → LinkVault**
-2. Set your **KB folder** (where your knowledge base index files live)
+2. Set your **KB folder** (where your knowledge base notes live)
 3. Set your **Inbox folder** (where clipped notes land)
 4. Choose a **provider** and enter your API key (not needed for Ollama)
-5. Click **Test Connection** to verify
-6. Open a note in your Inbox and run **"LinkVault: Process Link to KB"** from the command palette (Ctrl/Cmd+P)
+5. Click **Test connection** to verify
+6. Open a note in your Inbox and run **"LinkVault: Process link to KB"** from the command palette (Ctrl/Cmd+P)
 
-Each link uses roughly 1000 tokens across the 3 API calls. With Claude Haiku, that costs fractions of a cent per link.
+Each link uses roughly 1000 tokens across the AI calls. With Claude Haiku, that costs fractions of a cent per link.
 
-## Providers
+## Documentation
 
-### Anthropic (Claude)
-
-1. Set **Provider** to `Anthropic`
-2. Get an API key from [console.anthropic.com](https://console.anthropic.com/)
-3. Default model: `claude-haiku-4-5-20251001` (fast and affordable)
-
-### Ollama (local, free)
-
-1. Install [Ollama](https://ollama.com/) and pull a model: `ollama pull llama3.2`
-2. Set **Provider** to `Ollama`
-3. Adjust **Ollama host** if needed (default: `http://localhost:11434`)
-
-### OpenRouter
-
-1. Set **Provider** to `OpenRouter`
-2. Get an API key from [openrouter.ai](https://openrouter.ai/)
-3. Set **Model** to any available model (e.g. `anthropic/claude-3.5-haiku`)
-
-All providers support a **custom base URL** for proxies or self-hosted endpoints.
-
-> **API keys are stored in Obsidian's secret store** (added in Obsidian 1.11.4), not in
-> `data.json` — so they are never written to your vault files or synced with your notes.
-> LinkVault therefore requires **Obsidian 1.11.4 or later**. On first launch after upgrading,
-> any key previously saved in `data.json` is migrated into the secret store automatically; if
-> that old key was ever synced in plaintext, rotate it.
-
-## Settings
-
-### Knowledge Base
-
-| Setting | Description | Default |
-| --- | --- | --- |
-| KB folder | Folder containing KB index files | `Knowledge Base` |
-| Index file | Note whose auto-generated region is maintained; excluded from matching | `Index` |
-| Index exclusions | Comma-separated filenames to exclude from AI matching | `Knowledge Base Index` |
-| Inbox folder | Where clipped notes land | `Inbox` |
-| Table header marker | Table header string to search for | `\| Title \| Link \| Key Points \|` |
-| After processing | What to do with the inbox file | `trash` |
-
-### AI Provider
-
-| Setting | Description | Default |
-| --- | --- | --- |
-| Provider | `anthropic`, `ollama`, or `openrouter` | `anthropic` |
-| API key | Provider API key (not needed for Ollama) | — |
-| Model | Model name | `claude-haiku-4-5-20251001` |
-| Ollama host | Ollama instance URL (Ollama only) | `http://localhost:11434` |
-| Custom base URL | Override the default API endpoint | — |
-| Max tokens | Max tokens for LLM responses | `300` |
-
-### Prompts (Advanced)
-
-All prompts are customisable with template variables:
-
-| Prompt | Variables |
+| Page | Contents |
 | --- | --- |
-| Extract prompt | `{{content}}` |
-| File match prompt | `{{title}}`, `{{keypoints}}`, `{{fileList}}` |
-| Section match prompt | `{{title}}`, `{{keypoints}}`, `{{sectionList}}` |
+| [Routing](docs/routing.md) | How a note and section are chosen, when new notes are created, duplicate handling |
+| [KB structure](docs/kb-structure.md) | The file layout LinkVault expects, and the auto-generated index region |
+| [Web Clipper setup](docs/web-clipper.md) | Clipper template and the frontmatter LinkVault reads |
+| [Configuration](docs/configuration.md) | Providers, every setting, prompt variables |
+| [Troubleshooting](docs/troubleshooting.md) | What each message means |
 
-Content sent to the LLM is truncated to a configurable limit (default: 3000 chars).
+## Development
 
-## Troubleshooting
+```bash
+npm install
+npm run dev     # watch build
+npm test        # unit tests
+npm run lint
+npm run build   # typecheck + production bundle
+```
 
-| Error | Fix |
-| --- | --- |
-| "No KB files found" | Check that **KB folder** matches the actual folder name in your vault |
-| "Active file is not in the Inbox folder" | Open a note inside the configured Inbox folder |
-| "Cannot reach Ollama at ..." | Run `ollama serve` and check the **Ollama host** setting |
-| "API key is not configured" | Enter your API key in **Settings → LinkVault** |
-| "Rate limited" | The plugin retries automatically — wait a moment and try again |
-| Wrong file/section matched | Enable **Debug mode** to see raw AI responses in the console (Ctrl/Cmd+Shift+I) |
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup details and guidelines.
 
 ## Changelog
 
