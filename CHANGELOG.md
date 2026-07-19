@@ -53,6 +53,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Build toolchain moved to `esbuild` 0.28 and the release workflow to Node 22, so the release build installs from the lockfile cleanly.
 - Unit tests under `tests/`, run with `npm test`. They cover the pure functions — reply parsing, name validation, table and note construction, URL normalisation, and the managed index region — and were checked by reintroducing three past bugs to confirm each is caught. `@types/node` moved from the template's `^16` pin to `^22`, matching the Node version Obsidian actually ships.
 
+## [1.0.1] - 2026-05-16
+
+### Changed
+
+- `minAppVersion` raised to 1.6.6, matching the Obsidian APIs the plugin actually calls.
+- Provider responses are parsed through explicit types rather than `any`, so a malformed reply from Claude, Ollama, or OpenRouter is reported as an error instead of propagating `undefined` into the vault.
+- Retry backoff uses `activeWindow.setTimeout`, so timers belong to the window the plugin is running in.
+
+### Internal
+
+- Release artifacts carry build provenance attestations. The `builtin-modules` dependency was dropped in favour of Node's own `module.builtinModules`.
+
 ## [1.0.0] - 2026-03-20
 
 ### Added
