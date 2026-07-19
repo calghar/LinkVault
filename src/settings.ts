@@ -1,6 +1,7 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, SecretComponent } from "obsidian";
 import type LinkVaultPlugin from "./main";
 import { createProvider, LLMError } from "./llm";
+import { readApiKey, writeApiKey, clearApiKey } from "./secrets";
 
 export type LLMProviderType = "anthropic" | "ollama" | "openrouter";
 export type AfterProcessing = "trash" | "keep";
@@ -14,8 +15,8 @@ export interface LinkVaultSettings {
 	afterProcessing: AfterProcessing;
 
 	// AI Provider
+	// The API key is NOT stored here — it lives in Obsidian's secret store (see src/secrets.ts).
 	provider: LLMProviderType;
-	apiKey: string;
 	model: string;
 	ollamaHost: string;
 	customBaseUrl: string;
@@ -45,7 +46,6 @@ export const DEFAULT_SETTINGS: LinkVaultSettings = {
 	afterProcessing: "trash",
 
 	provider: "anthropic",
-	apiKey: "",
 	model: DEFAULT_MODELS.anthropic,
 	ollamaHost: "http://localhost:11434",
 	customBaseUrl: "",
@@ -185,20 +185,39 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 			);
 
 		if (this.plugin.settings.provider !== "ollama") {
-			new Setting(containerEl)
+			const keyIsSet = readApiKey(this.app) !== null;
+			const keySetting = new Setting(containerEl)
 				.setName("API key")
 				.setDesc(
-					`API key for ${this.plugin.settings.provider}.`
-				)
-				.addText((text) => {
-					text.inputEl.type = "password";
-					text.setPlaceholder("Enter your API key")
-						.setValue(this.plugin.settings.apiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.apiKey = value;
-							await this.plugin.saveSettings();
-						});
-				});
+					keyIsSet
+						? "A key is set. Enter a new value to replace it, or clear it. Stored in Obsidian's secret store, not data.json."
+						: "No key set. Enter your API key. Stored in Obsidian's secret store, not data.json."
+				);
+
+			// Masked secret input; never seeded with the stored value.
+			new SecretComponent(this.app, keySetting.controlEl).onChange(
+				(value) => {
+					if (value.length === 0) return;
+					try {
+						writeApiKey(this.app, value);
+					} catch (err) {
+						new Notice(
+							`LinkVault: could not save key: ${err instanceof Error ? err.message : String(err)}`
+						);
+					}
+				}
+			);
+
+			keySetting.addExtraButton((button) =>
+				button
+					.setIcon("x")
+					.setTooltip("Clear key")
+					.setDisabled(!keyIsSet)
+					.onClick(() => {
+						clearApiKey(this.app);
+						this.display();
+					})
+			);
 		}
 
 		new Setting(containerEl)
@@ -277,6 +296,7 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 						button.setButtonText("Testing...");
 						try {
 							const provider = createProvider(
+								this.app,
 								this.plugin.settings
 							);
 							await provider.testConnection();

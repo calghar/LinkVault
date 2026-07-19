@@ -4,6 +4,27 @@ All notable changes to LinkVault will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A full review of v1.0.1 is captured in [REVIEW.md](REVIEW.md); the roadmap below is specced
+but not yet implemented.
+
+### Planned
+
+- **Auto-update KB index** — regenerate the index file from actual KB files/sections after each insert and via a "Rebuild KB index" command.
+- **Anti-misrouting** — reliable index exclusion, a confidence gate replacing silent first-item fallback, and duplicate-link detection.
+- **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
+
+## [1.1.0] - 2026-07-18
+
+### Changed
+
+- **BREAKING:** the provider API key is now stored in Obsidian's SecretStorage (added in Obsidian 1.11.4) instead of plaintext `data.json`. `minAppVersion` is raised to `1.11.4`; users on older Obsidian versions stay on 1.0.1 via `versions.json`.
+
+### Security
+
+- API keys are no longer written to `data.json`, so they are never synced with vault files. An existing plaintext key is migrated into the secret store automatically on first launch (write-before-scrub, so a failed migration never loses the key). Rotate any key that was previously synced in plaintext.
+
 ## [1.0.0] - 2026-03-20
 
 ### Added

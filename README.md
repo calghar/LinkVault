@@ -192,6 +192,12 @@ Each link uses roughly 1000 tokens across the 3 API calls. With Claude Haiku, th
 
 All providers support a **custom base URL** for proxies or self-hosted endpoints.
 
+> **API keys are stored in Obsidian's secret store** (added in Obsidian 1.11.4), not in
+> `data.json` — so they are never written to your vault files or synced with your notes.
+> LinkVault therefore requires **Obsidian 1.11.4 or later**. On first launch after upgrading,
+> any key previously saved in `data.json` is migrated into the secret store automatically; if
+> that old key was ever synced in plaintext, rotate it.
+
 ## Settings
 
 ### Knowledge Base
