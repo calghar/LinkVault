@@ -5,6 +5,7 @@ import {
 	LinkVaultSettingTab,
 } from "./settings";
 import { processLink } from "./processor";
+import { rebuildKBIndex } from "./vault";
 import { readApiKey, writeApiKey } from "./secrets";
 
 export default class LinkVaultPlugin extends Plugin {
@@ -17,6 +18,12 @@ export default class LinkVaultPlugin extends Plugin {
 			id: "process-link-to-kb",
 			name: "Process link to KB",
 			callback: () => processLink(this.app, this.settings),
+		});
+
+		this.addCommand({
+			id: "rebuild-kb-index",
+			name: "Rebuild KB index",
+			callback: () => rebuildKBIndex(this.app, this.settings),
 		});
 
 		this.addSettingTab(new LinkVaultSettingTab(this.app, this));
@@ -39,16 +46,14 @@ export default class LinkVaultPlugin extends Plugin {
 		const legacy = raw.apiKey;
 		if (typeof legacy !== "string" || legacy.length === 0) return;
 
-		// Stored key wins: if one already exists, discard the plaintext without overwriting.
-		if (readApiKey(this.app) !== null) {
-			delete raw.apiKey;
-			await this.saveData(raw);
-			return;
-		}
-
 		try {
-			writeApiKey(this.app, legacy);
+			// Stored key wins: if one already exists, discard the plaintext without overwriting.
+			if (readApiKey(this.app) === null) {
+				writeApiKey(this.app, legacy);
+			}
 		} catch (err) {
+			// Migration is best-effort: a secret-store failure must never abort onload,
+			// or no commands get registered and the plugin silently does nothing.
 			console.error("[LinkVault] API key migration failed:", err);
 			return;
 		}

@@ -6,13 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-A full review of v1.0.1 is captured in [REVIEW.md](REVIEW.md); the roadmap below is specced
-but not yet implemented.
+### Added
+
+- **Auto-update KB index** — an auto-generated listing of your KB files (note, H2 sections, and link count) is maintained inside a marker-delimited managed region of the index note. Content outside the markers is never touched. Refreshes automatically when processing a link creates a new KB file, and on demand via the new **"Rebuild KB index"** command.
+- **Index file** setting — names the note whose managed region is maintained (default `Index`); that note is now excluded from AI matching so links are never routed into it.
 
 ### Planned
 
-- **Auto-update KB index** — regenerate the index file from actual KB files/sections after each insert and via a "Rebuild KB index" command.
-- **Anti-misrouting** — reliable index exclusion, a confidence gate replacing silent first-item fallback, and duplicate-link detection.
+- **Anti-misrouting** — a confidence gate replacing the silent first-item fallback, duplicate-link detection, and file/section match-prompt tuning.
 - **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
 
 ## [1.1.0] - 2026-07-18
