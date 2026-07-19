@@ -37,6 +37,10 @@ jobs:
         with:
           subject-path: styles.css
 
+      - name: Read minimum Obsidian version from the manifest
+        id: manifest
+        run: echo "min_app_version=$(jq -r .minAppVersion manifest.json)" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -50,6 +54,6 @@ jobs:
           body: |
             ## LinkVault ${{ github.ref_name }}
 
-            **Minimum Obsidian version:** 1.6.6
+            **Minimum Obsidian version:** ${{ steps.manifest.outputs.min_app_version }}
 
             See auto-generated changelog below for details.
