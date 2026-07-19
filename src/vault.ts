@@ -214,9 +214,69 @@ export async function findDuplicate(
 	return null;
 }
 
-export function buildNewKBFile(themeName: string): string {
+// Builds the separator row matching a table header, so a customised header marker still
+// produces a valid table.
+export function buildSeparatorRow(headerMarker: string): string {
+	const columns = headerMarker.split("|").slice(1, -1).length;
+	return `|${Array.from({ length: columns }, () => "------").join("|")}|`;
+}
+
+// Renders a tag line from free-form tag text: "#one #two". Tags are lowercased, spaces become
+// hyphens, and anything that is not a word character or hyphen is dropped, so model output
+// cannot produce a malformed tag.
+function formatTags(tags: string[]): string {
+	return tags
+		.map((tag) =>
+			tag
+				.trim()
+				.toLowerCase()
+				.replace(/^#+/, "")
+				.replaceAll(/\s+/g, "-")
+				.replaceAll(/[^\w-]/g, "")
+		)
+		.filter((tag) => tag.length > 0)
+		.map((tag) => `#${tag}`)
+		.join(" ");
+}
+
+export interface NewNoteContext {
+	tags: string[];
+	description: string;
+	indexFile: string;
+	headerMarker: string;
+}
+
+// Builds a new KB note in the same shape as the hand-written ones: title, tag line, a backlink
+// to the index carrying a one-line description of what the note collects, then a first section
+// holding an empty link table.
+export function buildNewKBFile(
+	themeName: string,
+	context: NewNoteContext
+): string {
 	const title = themeName.replaceAll("-", " ");
-	return `# ${title}\n\n## Overview\n\n| Title | Link | Key Points |\n|-------|------|-----------|\n`;
+	const separator = buildSeparatorRow(context.headerMarker);
+
+	const parts = [`# ${title}`, ""];
+
+	const tagLine = formatTags(context.tags);
+	if (tagLine.length > 0) parts.push(tagLine, "");
+
+	const description = context.description.trim();
+	parts.push(
+		description.length > 0
+			? `[[${context.indexFile}]] → ${description}`
+			: `[[${context.indexFile}]]`,
+		"",
+		"---",
+		"",
+		"## Overview",
+		"",
+		context.headerMarker,
+		separator,
+		""
+	);
+
+	return parts.join("\n");
 }
 
 export async function trashFile(app: App, file: TFile): Promise<void> {

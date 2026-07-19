@@ -96,16 +96,26 @@ NONE
 Use NONE if no section clearly fits, or if you are unsure.
 No explanation. No other text.`,
 
-	newNotePrompt: `You are creating a new note in a knowledge base to hold this saved link.
-No existing note covers it.
+	newNotePrompt: `You are creating a new note in a knowledge base. No existing note covers this link.
+
+Existing notes:
+{{fileList}}
 
 Link title: {{title}}
 Summary: {{keypoints}}
 Note content:
 {{content}}
 
-Reply with ONLY a short note name describing the topic this link belongs to.
-Use hyphens instead of spaces. Two to four words. No explanation, no quotes.`,
+Name a BROAD SUBJECT AREA for the new note, at the same level of generality as the existing
+notes above. This note will collect many links on that subject over time, so name the field
+the link belongs to — never this one link, and never the event it reports.
+
+Ask yourself: "what shelf does this belong on?" A link about one company's valuation goes on
+the shelf for that company's industry, not a shelf called Valuations. A link about one CVE goes
+on the shelf for that technology, not a shelf called Vulnerabilities.
+
+Reply ONLY with valid JSON — no markdown fences, no explanation:
+{"name": "Broad-Subject-Name", "tags": ["tag-one","tag-two","tag-three"], "description": "one line saying what this note collects"}`,
 
 	contentTruncateChars: 3000,
 	debugMode: false,
@@ -448,7 +458,7 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 		new Setting(promptsEl)
 			.setName("New note prompt")
 			.setDesc(
-				"Prompt to name a new note when no existing note matches. Variables: {{title}}, {{keypoints}}, {{content}}"
+				"Prompt to name a new note when no existing note matches. Must return JSON with name, tags, and description. Variables: {{title}}, {{keypoints}}, {{content}}, {{fileList}}"
 			)
 			.addTextArea((text) => {
 				text.inputEl.rows = 8;

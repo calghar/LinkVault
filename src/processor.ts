@@ -118,71 +118,113 @@ async function chooseKBFile(
 	return { kind: "unnamed" };
 }
 
-// Derives a name for a new KB note from the link's content. Returns null when the call fails —
-// the caller then leaves the link unfiled rather than inventing a name of its own.
-async function deriveNoteName(
+interface DerivedNote {
+	name: string;
+	tags: string[];
+	description: string;
+}
+
+// Describes a new KB note for the link: a broad subject name plus the tags and one-line
+// description the note template needs. The existing note names go into the prompt so the model
+// judges generality against them rather than naming the individual link.
+//
+// Returns null when the call fails or returns nothing usable — the caller then leaves the link
+// unfiled rather than inventing a name of its own.
+async function deriveNewNote(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
 	metadata: ExtractedMetadata,
-	content: string
-): Promise<string | null> {
+	content: string,
+	existingBasenames: string[]
+): Promise<DerivedNote | null> {
 	try {
 		const prompt = renderPrompt(settings.newNotePrompt, {
 			title: metadata.title,
 			keypoints: metadata.keypoints,
 			content,
+			fileList: existingBasenames.join("\n"),
 		});
 		const raw = await provider.ask(prompt);
-		log(settings, "New note name raw response:", raw);
-		return raw.trim().split("\n")[0]?.trim() ?? null;
+		log(settings, "New note raw response:", raw);
+
+		const parsed = extractJSON(raw);
+		const name = parsed?.name?.trim();
+		if (!name) return null;
+
+		return {
+			name,
+			tags: parseTags(parsed?.tags),
+			description: parsed?.description ?? "",
+		};
 	} catch (err) {
 		console.error(LOG_PREFIX, "Naming a new note failed:", err);
 		return null;
 	}
 }
 
-// Settles on a name for a new note, or null when none can be had.
+// extractJSON flattens every value to a string, so a tags array arrives as "a,b,c".
+function parseTags(value: string | undefined): string[] {
+	if (!value) return [];
+	return value
+		.split(",")
+		.map((tag) => tag.trim())
+		.filter((tag) => tag.length > 0);
+}
+
+// Settles on the new note to create, or null when none can be had.
 //
-// A name the model volunteered during matching is tried first, since it cost nothing. If it
-// fails validation — a placeholder echo, a path separator — that is not the end: the dedicated
-// naming call gets a turn before the link is abandoned.
-async function resolveNewNoteName(
+// The naming call is always made: it is the only step that sees the existing notes and is asked
+// for a broad subject area, and it also supplies the tags and description the note template
+// needs. A name volunteered during matching is used in its place only if the naming call fails,
+// since that name describes the link rather than a subject area.
+async function resolveNewNote(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
 	metadata: ExtractedMetadata,
 	content: string,
 	proposedName: string | null,
 	existingBasenames: string[]
-): Promise<string | null> {
+): Promise<DerivedNote | null> {
+	const derived = await deriveNewNote(
+		provider, settings, metadata, content, existingBasenames
+	);
+
+	if (derived !== null) {
+		const check = validateNewName(derived.name, existingBasenames);
+		if (check.ok) return { ...derived, name: check.name };
+		log(settings, "Derived name rejected:", derived.name, check.reason);
+	}
+
 	if (proposedName !== null) {
 		const check = validateNewName(proposedName, existingBasenames);
-		if (check.ok) return check.name;
+		if (check.ok) return { name: check.name, tags: [], description: "" };
 		log(settings, "Proposed name rejected:", proposedName, check.reason);
 	}
 
-	const derived = await deriveNoteName(provider, settings, metadata, content);
-	if (derived === null) return null;
-
-	const check = validateNewName(derived, existingBasenames);
-	if (check.ok) return check.name;
-
-	log(settings, "Derived name rejected:", derived, check.reason);
 	return null;
 }
 
-// Turns a validated name into a target, reusing an existing note when the name collides.
+// Turns a described note into a target, reusing an existing note when the name collides.
 async function createKBFile(
 	app: App,
 	settings: LinkVaultSettings,
-	name: string,
+	note: DerivedNote,
 	kbFiles: TFile[]
 ): Promise<{ targetFile: TFile; createdNew: boolean }> {
-	const existing = kbFiles.find((f) => f.basename === name);
+	const existing = kbFiles.find((f) => f.basename === note.name);
 	if (existing) return { targetFile: existing, createdNew: false };
 
-	const filePath = normalizePath(`${settings.kbFolder}/${name}.md`);
-	const targetFile = await app.vault.create(filePath, buildNewKBFile(name));
-	new Notice(`Created new KB note: ${name}`);
+	const filePath = normalizePath(`${settings.kbFolder}/${note.name}.md`);
+	const targetFile = await app.vault.create(
+		filePath,
+		buildNewKBFile(note.name, {
+			tags: note.tags,
+			description: note.description,
+			indexFile: settings.indexFile,
+			headerMarker: settings.headerMarker,
+		})
+	);
+	new Notice(`Created new KB note: ${note.name}`);
 	return { targetFile, createdNew: true };
 }
 
@@ -299,7 +341,7 @@ export async function processLink(
 		targetFile = choice.targetFile;
 	} else {
 		// No existing note fits, so make one.
-		const name = await resolveNewNoteName(
+		const note = await resolveNewNote(
 			provider,
 			settings,
 			metadata,
@@ -309,7 +351,7 @@ export async function processLink(
 		);
 
 		// The one case that still leaves a link unfiled: no usable name could be produced.
-		if (name === null) {
+		if (note === null) {
 			new Notice(
 				`LinkVault: could not name a note for "${metadata.title}" — left in ${settings.inboxFolder}.`
 			);
@@ -317,7 +359,7 @@ export async function processLink(
 		}
 
 		({ targetFile, createdNew } = await createKBFile(
-			app, settings, name, kbFiles
+			app, settings, note, kbFiles
 		));
 	}
 

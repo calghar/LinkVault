@@ -67,10 +67,36 @@ customised a prompt from an older release, a reply that *exactly* names a file o
 accepted — but a reply that merely contains a name is not, since that was the guess behind
 misrouted links.
 
-New note names — whether the model volunteers one or LinkVault derives it — are normalised to your
-KB's `Title-Case-Hyphenated` convention and validated before anything is created: non-empty, 60
-characters or fewer, no path separators, and not leftover placeholder text from a prompt. A name
-matching an existing note reuses that note instead of creating a second one.
+### New notes
+
+A created note is named after the **subject area** the link belongs to, never the link itself. The
+naming step is given your existing note names so it matches their level of generality — a link
+about one company's valuation creates `Space-Industry`, not `SpaceX-Valuation`, leaving a note that
+collects further links on that subject.
+
+Names are normalised to `Title-Case-Hyphenated` and validated before anything is created:
+non-empty, 60 characters or fewer, no path separators, and not leftover placeholder text. A name
+matching an existing note reuses that note rather than creating a second one.
+
+New notes follow the same structure as hand-written ones:
+
+```markdown
+# Space Industry
+
+#space #aerospace #launch-vehicles
+
+[[Index]] → Links on the commercial space industry, launch providers, and satellite operators.
+
+---
+
+## Overview
+
+| Title | Link | Key Points |
+|------|------|------|
+```
+
+The backlink points at your configured index note, and the table header is your configured header
+marker, so a customised marker still produces a valid table.
 
 If you never edited the prompts, they update automatically when the plugin updates — a stored
 prompt identical to an older shipped default is replaced. Prompts you actually customised are
