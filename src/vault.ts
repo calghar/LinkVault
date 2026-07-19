@@ -68,6 +68,18 @@ export function resolveMatch(
 	return items.find((item) => item.toLowerCase() === cleaned) ?? null;
 }
 
+// Reduces a table row to its cell text, so headers are compared by content rather than by
+// exact bytes. Obsidian's formatter pads cells to align the column rules, which rewrites a
+// header that was originally identical to the configured marker. Comparing literally, that
+// padded header stops matching and the note grows a second table alongside the first.
+function headerCells(line: string): string {
+	return line
+		.split("|")
+		.slice(1, -1)
+		.map((cell) => cell.trim())
+		.join("|");
+}
+
 // Inserts a row after the separator line of the matched section's table.
 // If no table exists yet, creates one before the next section.
 export function insertTableRow(
@@ -76,29 +88,37 @@ export function insertTableRow(
 	newRow: string,
 	headerMarker: string
 ): string {
-	const sectionPos = content.indexOf(`## ${sectionName}`);
-	const searchFrom = sectionPos > -1 ? sectionPos : 0;
+	const lines = content.split("\n");
+	const sectionPos = lines.findIndex(
+		(line) => line.trim() === `## ${sectionName}`
+	);
+	const searchFrom = sectionPos > -1 ? sectionPos + 1 : 0;
 
-	const headerPos = content.indexOf(headerMarker, searchFrom);
+	// Bounded to this section. An unbounded search finds the next table anywhere below,
+	// which for a section with no table of its own means filing the row under a heading
+	// nobody chose.
+	const relativeEnd = lines
+		.slice(searchFrom)
+		.findIndex((line) => line.startsWith("## "));
+	const sectionEnd =
+		relativeEnd > -1 ? searchFrom + relativeEnd : lines.length;
+
+	const wanted = headerCells(headerMarker);
+	const headerPos = lines.findIndex(
+		(line, i) =>
+			i >= searchFrom && i < sectionEnd && headerCells(line) === wanted
+	);
 
 	if (headerPos !== -1) {
-		const afterHeader = content.indexOf("\n", headerPos) + 1;
-		const afterSep = content.indexOf("\n", afterHeader) + 1;
-		return (
-			content.slice(0, afterSep) +
-			newRow +
-			"\n" +
-			content.slice(afterSep)
-		);
+		// Past the header and its separator rule.
+		lines.splice(headerPos + 2, 0, newRow);
+		return lines.join("\n");
 	}
 
 	// No table in this section — create one
-	const nextSectionPos = content.indexOf("\n## ", searchFrom + 1);
-	const insertPos =
-		nextSectionPos > -1 ? nextSectionPos : content.length;
-
-	const table = `\n${headerMarker}\n|-------|------|-----------|\n${newRow}\n`;
-	return content.slice(0, insertPos) + table + content.slice(insertPos);
+	const table = ["", headerMarker, buildSeparatorRow(headerMarker), newRow];
+	lines.splice(sectionEnd, 0, ...table);
+	return lines.join("\n");
 }
 
 // ---- New-file name validation ----

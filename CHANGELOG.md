@@ -34,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Rows now join a table Obsidian has reformatted.** Table headers are matched by their cell text rather than byte-for-byte, so the padding Obsidian's formatter adds to align columns no longer hides the table. Previously a reformatted note grew a second table beside the first, and the original became permanently unreachable.
+- **A row can no longer land in a section nobody chose.** The search for a section's table ran to the end of the file, so a section with no table of its own borrowed the next section's. It is now bounded to the section.
+- **Custom table headers get a valid separator.** New tables used a hardcoded three-column separator, so a header marker with a different column count produced a table Obsidian would not render.
 - **Junk KB notes are no longer created from prompt text.** The old prompt ended with a literal example, `NEW: Descriptive-Theme-Name`, and small local models copied it verbatim — producing a note actually named `Descriptive-Theme-Name.md`. Proposed names are now validated (non-empty, length-limited, no path separators, not placeholder text) and an existing note of that name is reused rather than duplicated.
 
 ### Documentation

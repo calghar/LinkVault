@@ -71,6 +71,69 @@ describe("insertTableRow", () => {
 		expect(result).toContain(ROW);
 		expect(result).toContain("Some prose.");
 	});
+
+	// Obsidian's formatter pads header cells to align the column rules. The padded header is
+	// the same table, so the row belongs in it. Matching the marker literally missed it and
+	// grew a second table beside the first, leaving the original permanently unreachable —
+	// observed in a real vault, where one note ended up with two tables under one heading.
+	it("inserts into a header Obsidian has reformatted with padding", () => {
+		const padded = [
+			"## Scalability",
+			"",
+			"| Title      | Link      | Key Points |",
+			"| ---------- | --------- | ---------- |",
+			"| Existing row | [Link](https://example.com/a) | Notes |",
+			"",
+		].join("\n");
+
+		const result = insertTableRow(padded, "Scalability", ROW, HEADER);
+
+		expect(result).not.toContain(HEADER);
+		expect(result.split("| Title").length - 1).toBe(1);
+		expect(result.indexOf(ROW)).toBeLessThan(
+			result.indexOf("| Existing row |")
+		);
+	});
+
+	// A section with no table of its own must get one, not borrow the next section's. The
+	// header search used to run to end of file, so the row was filed under a heading the
+	// model never chose.
+	it("does not reach into a later section's table", () => {
+		const note = [
+			"## Prose Only",
+			"",
+			"No table here.",
+			"",
+			"## Has Table",
+			"",
+			HEADER,
+			"|-------|------|-----------|",
+			"| Existing row | [Link](https://example.com/a) | Notes |",
+			"",
+		].join("\n");
+
+		const result = insertTableRow(note, "Prose Only", ROW, HEADER);
+
+		const later = result.slice(result.indexOf("## Has Table"));
+		expect(later).not.toContain(ROW);
+		expect(result.indexOf(ROW)).toBeLessThan(
+			result.indexOf("## Has Table")
+		);
+	});
+
+	// The separator was hardcoded to three columns while buildSeparatorRow sat unused, so a
+	// custom header marker produced a table Obsidian would not render.
+	it("builds a separator matching a custom header's column count", () => {
+		const five = "| Title | Link | Key Points | Date | Tags |";
+		const result = insertTableRow(
+			"## Empty\n",
+			"Empty",
+			ROW,
+			five
+		);
+		expect(result).toContain(buildSeparatorRow(five));
+		expect(result).not.toContain("|-------|------|-----------|");
+	});
 });
 
 describe("buildSeparatorRow", () => {
