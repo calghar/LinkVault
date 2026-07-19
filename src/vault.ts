@@ -52,35 +52,20 @@ export function getSections(content: string): string[] {
 	return sections;
 }
 
-// Tries exact match, then case-insensitive contains, then falls back to first item.
-export function fuzzyMatch(
+// Resolves a response to one of `items`, or null when it resolves to none of them.
+//
+// This used to fall back to `items[0]` when nothing matched, which meant every link
+// landed somewhere whether or not the model had actually chosen it \u2014 the mechanism
+// behind silently misrouted links. Callers now handle null explicitly.
+//
+// The old case-insensitive *substring* pass is gone with it: "contains a name" is a
+// guess, not a match.
+export function resolveMatch(
 	response: string,
-	items: string[],
-	label: string
-): { matched: string; wasExact: boolean } {
-	if (items.length === 0) {
-		throw new Error(`No ${label} available to match against.`);
-	}
-
-	const cleaned = response.trim();
-
-	const exact = items.find((item) => item === cleaned);
-	if (exact) return { matched: exact, wasExact: true };
-
-	const lowerCleaned = cleaned.toLowerCase();
-	const fuzzy = items.find((item) => {
-		const lowerItem = item.toLowerCase();
-		return (
-			lowerItem.includes(lowerCleaned) ||
-			lowerCleaned.includes(lowerItem)
-		);
-	});
-	if (fuzzy) return { matched: fuzzy, wasExact: false };
-
-	new Notice(
-		`\u26a0\ufe0f LinkVault: Could not match ${label} "${cleaned}", using "${items[0]}"`
-	);
-	return { matched: items[0], wasExact: false };
+	items: string[]
+): string | null {
+	const cleaned = response.trim().toLowerCase();
+	return items.find((item) => item.toLowerCase() === cleaned) ?? null;
 }
 
 // Inserts a row after the separator line of the matched section's table.
@@ -116,9 +101,210 @@ export function insertTableRow(
 	return content.slice(0, insertPos) + table + content.slice(insertPos);
 }
 
-export function buildNewKBFile(themeName: string): string {
+// ---- New-file name validation ----
+
+const MAX_NAME_LENGTH = 60;
+
+// Placeholder text that must never become a filename. The first entry shipped as a literal
+// in the old default prompt, and small models copied it verbatim rather than substituting a
+// real theme — creating notes actually named "Descriptive-Theme-Name". Users who customised
+// that prompt still carry the literal, so it stays rejected.
+// Compared against the normalised, lowercased name, so entries are hyphenated even where the
+// prompt text they came from used spaces.
+const NAME_PLACEHOLDERS = [
+	"descriptive-theme-name",
+	"short-hyphenated-topic-name-you-invent-for-this-link",
+	"short-note-name-describing-the-topic-this-link-belongs-to",
+	"topic-name",
+	"theme-name",
+	"new-note",
+];
+
+export type NameCheck = { ok: true; name: string } | { ok: false; reason: string };
+
+// Models return names in inconsistent case ("productivity-technology-culture" next to
+// "Hand-tool-joinery-techniques"). KB notes are Title-Case-Hyphenated — AI-Security,
+// Low-Level-Security — so canonicalise before validating, and the existing-file collision
+// check below then compares like with like.
+//
+// Words already containing an interior capital (AI, CodeQL, eBPF) are left alone rather than
+// lowercased into something wrong.
+export function normalizeNoteName(name: string): string {
+	return name
+		.trim()
+		.replaceAll(/\s+/g, "-")
+		.split("-")
+		.filter((word) => word.length > 0)
+		.map((word) =>
+			/[A-Z]/.test(word.slice(1))
+				? word
+				: word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+		)
+		.join("-");
+}
+
+// Validates a KB filename from any origin — proposed by the match call, derived by the naming
+// call, or typed by the user. Every route goes through here so none can bypass the guard.
+// Returns the canonical form on success, which may differ in case from the input.
+export function validateNewName(
+	proposed: string,
+	existingBasenames: string[]
+): NameCheck {
+	const name = normalizeNoteName(proposed);
+
+	if (name.length === 0) return { ok: false, reason: "Name is empty." };
+	if (name.length > MAX_NAME_LENGTH)
+		return {
+			ok: false,
+			reason: `Name is longer than ${MAX_NAME_LENGTH} characters.`,
+		};
+	if (/[/\\:]/.test(name))
+		return { ok: false, reason: "Name cannot contain / \\ or :" };
+	if (name.startsWith("."))
+		return { ok: false, reason: "Name cannot start with a dot." };
+	if (NAME_PLACEHOLDERS.includes(name.toLowerCase()))
+		return {
+			ok: false,
+			reason: "Name is prompt placeholder text, not a real topic.",
+		};
+
+	// An existing file wins over creating a near-duplicate of it.
+	const existing = existingBasenames.find(
+		(b) => b.toLowerCase() === name.toLowerCase()
+	);
+	if (existing) return { ok: true, name: existing };
+
+	return { ok: true, name };
+}
+
+// ---- Duplicate link detection ----
+
+// Normalises a URL for comparison: scheme and host are case-insensitive, a trailing slash
+// is not meaningful. Query and fragment are left alone — two URLs differing there are
+// treated as distinct, which errs toward filing a new link rather than silently dropping it.
+export function normalizeUrl(url: string): string {
+	const trimmed = url.trim();
+	if (trimmed.length === 0) return "";
+	try {
+		const parsed = new URL(trimmed);
+		const path = parsed.pathname.replace(/\/$/, "");
+		return `${parsed.protocol.toLowerCase()}//${parsed.host.toLowerCase()}${path}${parsed.search}${parsed.hash}`;
+	} catch {
+		return trimmed.replace(/\/$/, "").toLowerCase();
+	}
+}
+
+// Returns the KB file already holding this URL, or null. Scans every KB file rather than
+// only the matched target, so a link refiled to a different note than last time is still
+// caught. Reads come from Obsidian's cache and involve no LLM calls.
+export async function findDuplicate(
+	app: App,
+	settings: LinkVaultSettings,
+	url: string
+): Promise<TFile | null> {
+	const needle = normalizeUrl(url);
+	if (needle.length === 0) return null;
+
+	for (const file of getKBFiles(app, settings)) {
+		const content = await app.vault.cachedRead(file);
+		for (const match of content.matchAll(/\((https?:\/\/[^)\s]+)\)/g)) {
+			if (normalizeUrl(match[1]) === needle) return file;
+		}
+	}
+	return null;
+}
+
+// Builds the separator row matching a table header, so a customised header marker still
+// produces a valid table.
+export function buildSeparatorRow(headerMarker: string): string {
+	const columns = headerMarker.split("|").slice(1, -1).length;
+	return `|${Array.from({ length: columns }, () => "------").join("|")}|`;
+}
+
+// Renders a tag line from free-form tag text: "#one #two". Tags are lowercased, spaces become
+// hyphens, and anything that is not a word character or hyphen is dropped, so model output
+// cannot produce a malformed tag.
+function formatTags(tags: string[]): string {
+	return tags
+		.map((tag) =>
+			tag
+				.trim()
+				.toLowerCase()
+				.replace(/^#+/, "")
+				.replaceAll(/\s+/g, "-")
+				.replaceAll(/[^\w-]/g, "")
+		)
+		.filter((tag) => tag.length > 0)
+		.map((tag) => `#${tag}`)
+		.join(" ");
+}
+
+export interface NewNoteContext {
+	tags: string[];
+	description: string;
+	section: string;
+	indexFile: string;
+	headerMarker: string;
+}
+
+// Existing notes head their first table with a heading describing the kind of link it holds —
+// "Attack Research", "Key Blogs", "AWS Security" — not a generic one. Falls back to "Overview"
+// when nothing usable was supplied. Pipes would break the table that follows, and a heading is
+// a single line.
+const DEFAULT_SECTION = "Overview";
+
+function sanitizeSection(section: string): string {
+	const cleaned = section
+		.split("\n")[0]
+		.replaceAll("|", "")
+		.replace(/^#+\s*/, "")
+		.trim();
+
+	if (cleaned.length === 0) return DEFAULT_SECTION;
+
+	// Models sometimes carry the note name's hyphenation into the heading, yielding
+	// "Company-Valuations-and-Market-Performance". Headings in this KB separate words with
+	// spaces. Only a heading that is entirely hyphenated is rewritten — a single hyphen is
+	// usually a real compound ("Multi-Cloud Reports", "AI Red-Teaming"), so it is left alone.
+	const hyphens = cleaned.match(/-/g)?.length ?? 0;
+	if (!cleaned.includes(" ") && hyphens >= 2) {
+		return cleaned.replaceAll("-", " ");
+	}
+
+	return cleaned;
+}
+
+// Builds a new KB note in the same shape as the hand-written ones: title, tag line, a backlink
+// to the index carrying a one-line description of what the note collects, then a first section
+// holding an empty link table.
+export function buildNewKBFile(
+	themeName: string,
+	context: NewNoteContext
+): string {
 	const title = themeName.replaceAll("-", " ");
-	return `# ${title}\n\n## Overview\n\n| Title | Link | Key Points |\n|-------|------|-----------|\n`;
+	const separator = buildSeparatorRow(context.headerMarker);
+
+	const parts = [`# ${title}`, ""];
+
+	const tagLine = formatTags(context.tags);
+	if (tagLine.length > 0) parts.push(tagLine, "");
+
+	const description = context.description.trim();
+	parts.push(
+		description.length > 0
+			? `[[${context.indexFile}]] → ${description}`
+			: `[[${context.indexFile}]]`,
+		"",
+		"---",
+		"",
+		`## ${sanitizeSection(context.section)}`,
+		"",
+		context.headerMarker,
+		separator,
+		""
+	);
+
+	return parts.join("\n");
 }
 
 export async function trashFile(app: App, file: TFile): Promise<void> {

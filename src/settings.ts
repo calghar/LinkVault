@@ -27,6 +27,7 @@ export interface LinkVaultSettings {
 	extractPrompt: string;
 	fileMatchPrompt: string;
 	sectionMatchPrompt: string;
+	newNotePrompt: string;
 	contentTruncateChars: number;
 
 	// Debug
@@ -61,20 +62,65 @@ Reply ONLY with valid JSON — no markdown fences, no explanation.
 Content:
 {{content}}`,
 
-	fileMatchPrompt: `Content: "{{title}} — {{keypoints}}"
+	fileMatchPrompt: `You are filing a saved link into a knowledge base. Each file below covers ONE specific topic.
 
-Available knowledge base files:
+Files:
 {{fileList}}
 
-Which file is the best match? Reply with ONLY the exact filename (no extension, no explanation).
-If none fit well, reply: NEW: Descriptive-Theme-Name`,
+Link: "{{title}} — {{keypoints}}"
 
-	sectionMatchPrompt: `Content: "{{title}} — {{keypoints}}"
+A file is a match ONLY if the link is squarely about that file's topic. A link that merely
+touches the topic, or that covers many topics with no single focus, is NOT a match.
 
-Sections in the target file:
+Reply with exactly one line, one of these three forms:
+MATCH: <exact filename from the list above>
+NEW: <short hyphenated topic name you invent for this link>
+NONE
+
+Use NONE if the link has no single clear topic, or if you are unsure.
+No explanation. No other text.`,
+
+	sectionMatchPrompt: `You are filing a saved link into one section of the note "{{targetFile}}".
+
+Sections:
 {{sectionList}}
 
-Reply with ONLY the exact section name that best fits this content.`,
+Link: "{{title}} — {{keypoints}}"
+
+A section is a match ONLY if the link is squarely about that section's subject.
+
+Reply with exactly one line, one of these two forms:
+MATCH: <exact section name from the list above>
+NONE
+
+Use NONE if no section clearly fits, or if you are unsure.
+No explanation. No other text.`,
+
+	newNotePrompt: `You are creating a new note in a knowledge base. No existing note covers this link.
+
+Existing notes:
+{{fileList}}
+
+Link title: {{title}}
+Summary: {{keypoints}}
+Note content:
+{{content}}
+
+Name a BROAD SUBJECT AREA for the new note, at the same level of generality as the existing
+notes above. This note will collect many links on that subject over time, so name the field
+the link belongs to — never this one link, and never the event it reports.
+
+Ask yourself: "what shelf does this belong on?" A link about one company's valuation goes on
+the shelf for that company's industry, not a shelf called Valuations. A link about one CVE goes
+on the shelf for that technology, not a shelf called Vulnerabilities. Leave out any word naming
+an event, a metric, or a piece of analysis.
+
+Also give a heading for the note's first section, describing what kind of link this is. Existing
+notes use headings like "Attack Research", "Tools & Monitoring", "Key Blogs", "Industry Reports".
+Write the heading with normal spaces between words — hyphens belong in the note name, not here.
+
+Reply ONLY with valid JSON — no markdown fences, no explanation:
+{"name": "Broad-Subject-Name", "tags": ["tag-one","tag-two","tag-three"], "description": "one line saying what this note collects", "section": "Section Heading"}`,
 
 	contentTruncateChars: 3000,
 	debugMode: false,
@@ -410,6 +456,23 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.sectionMatchPrompt)
 					.onChange(async (value) => {
 						this.plugin.settings.sectionMatchPrompt = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(promptsEl)
+			.setName("New note prompt")
+			.setDesc(
+				"Prompt to name a new note when no existing note matches. Must return JSON with name, tags, and description. Variables: {{title}}, {{keypoints}}, {{content}}, {{fileList}}"
+			)
+			.addTextArea((text) => {
+				text.inputEl.rows = 8;
+				text.inputEl.cols = 50;
+				text.inputEl.addClass("linkvault-prompt");
+				text.setPlaceholder(DEFAULT_SETTINGS.newNotePrompt)
+					.setValue(this.plugin.settings.newNotePrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.newNotePrompt = value;
 						await this.plugin.saveSettings();
 					});
 			});

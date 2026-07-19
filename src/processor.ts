@@ -1,16 +1,19 @@
-import { App, TFile, Notice } from "obsidian";
+import { App, TFile, Notice, normalizePath } from "obsidian";
 import type { LinkVaultSettings } from "./settings";
 import { createProvider, type LLMProvider } from "./llm";
 import {
 	getKBFiles,
 	getSections,
-	fuzzyMatch,
+	resolveMatch,
 	insertTableRow,
 	buildNewKBFile,
 	trashFile,
 	formatTableRow,
 	rebuildKBIndex,
+	validateNewName,
+	findDuplicate,
 } from "./vault";
+import { parseMatchReply } from "./match";
 
 const LOG_PREFIX = "[LinkVault]";
 
@@ -77,17 +80,20 @@ async function extractMetadata(
 	}
 }
 
-async function matchKBFile(
-	app: App,
+// What the file-match call decided, before anything is written. Selecting an existing file and
+// naming a new one are kept separate from acting on either, so the duplicate check can run in
+// between — nothing is created until the link is known to be new.
+type FileChoice =
+	| { kind: "existing"; targetFile: TFile }
+	| { kind: "create"; proposedName: string | null }
+	| { kind: "unnamed" };
+
+async function chooseKBFile(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
-	metadata: ExtractedMetadata
-): Promise<{ targetFile: TFile; targetFileName: string; createdNew: boolean }> {
-	const kbFiles = getKBFiles(app, settings);
-	if (kbFiles.length === 0) {
-		throw new Error(`No KB files found in "${settings.kbFolder}" folder.`);
-	}
-
+	metadata: ExtractedMetadata,
+	kbFiles: TFile[]
+): Promise<FileChoice> {
 	const fileNames = kbFiles.map((f) => f.basename);
 	log(settings, "Available KB files:", fileNames);
 
@@ -99,24 +105,138 @@ async function matchKBFile(
 	const raw = await provider.ask(prompt);
 	log(settings, "File match raw response:", raw);
 
-	const response = raw.trim();
+	const reply = parseMatchReply(raw, fileNames);
 
-	if (response.toUpperCase().startsWith("NEW:")) {
-		const themeName = response.slice(4).trim();
-		const filePath = `${settings.kbFolder}/${themeName}.md`;
-		const targetFile = await app.vault.create(filePath, buildNewKBFile(themeName));
-		new Notice(`Created new KB file: ${themeName}`);
-		return { targetFile, targetFileName: themeName, createdNew: true };
+	if (reply.kind === "match") {
+		const found = kbFiles.find((f) => f.basename === reply.name);
+		if (found) return { kind: "existing", targetFile: found };
 	}
 
-	const { matched } = fuzzyMatch(response, fileNames, "KB file");
-	const found = kbFiles.find((f) => f.basename === matched);
-	if (!found) {
-		throw new Error(`Could not find KB file: ${matched}`);
-	}
-	return { targetFile: found, targetFileName: matched, createdNew: false };
+	// "No existing file fits" is the reason to create one, not a reason to stop. A name the
+	// model volunteered is used as-is; otherwise one is derived from the note's content.
+	if (reply.kind === "new") return { kind: "create", proposedName: reply.name };
+	return { kind: "unnamed" };
 }
 
+interface DerivedNote {
+	name: string;
+	tags: string[];
+	description: string;
+	section: string;
+}
+
+// Describes a new KB note for the link: a broad subject name plus the tags and one-line
+// description the note template needs. The existing note names go into the prompt so the model
+// judges generality against them rather than naming the individual link.
+//
+// Returns null when the call fails or returns nothing usable — the caller then leaves the link
+// unfiled rather than inventing a name of its own.
+async function deriveNewNote(
+	provider: LLMProvider,
+	settings: LinkVaultSettings,
+	metadata: ExtractedMetadata,
+	content: string,
+	existingBasenames: string[]
+): Promise<DerivedNote | null> {
+	try {
+		const prompt = renderPrompt(settings.newNotePrompt, {
+			title: metadata.title,
+			keypoints: metadata.keypoints,
+			content,
+			fileList: existingBasenames.join("\n"),
+		});
+		const raw = await provider.ask(prompt);
+		log(settings, "New note raw response:", raw);
+
+		const parsed = extractJSON(raw);
+		const name = parsed?.name?.trim();
+		if (!name) return null;
+
+		return {
+			name,
+			tags: parseTags(parsed?.tags),
+			description: parsed?.description ?? "",
+			section: parsed?.section ?? "",
+		};
+	} catch (err) {
+		console.error(LOG_PREFIX, "Naming a new note failed:", err);
+		return null;
+	}
+}
+
+// extractJSON flattens every value to a string, so a tags array arrives as "a,b,c".
+function parseTags(value: string | undefined): string[] {
+	if (!value) return [];
+	return value
+		.split(",")
+		.map((tag) => tag.trim())
+		.filter((tag) => tag.length > 0);
+}
+
+// Settles on the new note to create, or null when none can be had.
+//
+// The naming call is always made: it is the only step that sees the existing notes and is asked
+// for a broad subject area, and it also supplies the tags and description the note template
+// needs. A name volunteered during matching is used in its place only if the naming call fails,
+// since that name describes the link rather than a subject area.
+async function resolveNewNote(
+	provider: LLMProvider,
+	settings: LinkVaultSettings,
+	metadata: ExtractedMetadata,
+	content: string,
+	proposedName: string | null,
+	existingBasenames: string[]
+): Promise<DerivedNote | null> {
+	const derived = await deriveNewNote(
+		provider, settings, metadata, content, existingBasenames
+	);
+
+	if (derived !== null) {
+		const check = validateNewName(derived.name, existingBasenames);
+		if (check.ok) return { ...derived, name: check.name };
+		log(settings, "Derived name rejected:", derived.name, check.reason);
+	}
+
+	if (proposedName !== null) {
+		const check = validateNewName(proposedName, existingBasenames);
+		if (check.ok)
+			return { name: check.name, tags: [], description: "", section: "" };
+		log(settings, "Proposed name rejected:", proposedName, check.reason);
+	}
+
+	return null;
+}
+
+// Turns a described note into a target, reusing an existing note when the name collides.
+async function createKBFile(
+	app: App,
+	settings: LinkVaultSettings,
+	note: DerivedNote,
+	kbFiles: TFile[]
+): Promise<{ targetFile: TFile; createdNew: boolean }> {
+	const existing = kbFiles.find((f) => f.basename === note.name);
+	if (existing) return { targetFile: existing, createdNew: false };
+
+	const filePath = normalizePath(`${settings.kbFolder}/${note.name}.md`);
+	const targetFile = await app.vault.create(
+		filePath,
+		buildNewKBFile(note.name, {
+			tags: note.tags,
+			description: note.description,
+			section: note.section,
+			indexFile: settings.indexFile,
+			headerMarker: settings.headerMarker,
+		})
+	);
+	new Notice(`Created new KB note: ${note.name}`);
+	return { targetFile, createdNew: true };
+}
+
+// Picks a section within an already-chosen file.
+//
+// Unlike the file choice, this falls back rather than declining: a link in the wrong section of
+// the right note is visible and trivially moved, whereas an unfiled link is work. The fallback
+// is announced so it is never silent.
 async function matchSection(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
@@ -129,6 +249,7 @@ async function matchSection(
 	if (sections.length === 0) return "Overview";
 	if (sections.length === 1) return sections[0];
 
+	let chosen: string | null = null;
 	try {
 		const prompt = renderPrompt(settings.sectionMatchPrompt, {
 			title: metadata.title,
@@ -138,12 +259,18 @@ async function matchSection(
 		});
 		const raw = await provider.ask(prompt);
 		log(settings, "Section match raw response:", raw);
-		return fuzzyMatch(raw.trim(), sections, "section").matched;
+		const reply = parseMatchReply(raw, sections);
+		if (reply.kind === "match") chosen = resolveMatch(reply.name, sections);
 	} catch (err) {
 		console.error(LOG_PREFIX, "Section match failed:", err);
-		new Notice("LinkVault: section match failed, using first section.");
-		return sections[0];
 	}
+
+	if (chosen) return chosen;
+
+	new Notice(
+		`LinkVault: no clear section in ${targetFileName} — filed under "${sections[0]}".`
+	);
+	return sections[0];
 }
 
 export async function processLink(
@@ -181,21 +308,67 @@ export async function processLink(
 	);
 	log(settings, "Extracted metadata:", metadata);
 
-	let targetFile: TFile;
-	let targetFileName: string;
-	let createdNew: boolean;
+	const kbFiles = getKBFiles(app, settings);
+	if (kbFiles.length === 0) {
+		new Notice(
+			`LinkVault: no KB notes found in "${settings.kbFolder}".`
+		);
+		return;
+	}
+
+	let choice: FileChoice;
 	try {
-		const result = await matchKBFile(app, provider, settings, metadata);
-		targetFile = result.targetFile;
-		targetFileName = result.targetFileName;
-		createdNew = result.createdNew;
+		choice = await chooseKBFile(provider, settings, metadata, kbFiles);
 	} catch (err) {
 		new Notice(
 			`LinkVault: ${err instanceof Error ? err.message : String(err)}`
 		);
 		return;
 	}
-	log(settings, "Matched KB file:", targetFileName);
+
+	// Before anything is created or written: a URL already in the KB needs no target at all,
+	// and checking here means a duplicate never leaves an empty new note behind.
+	if (url.length > 0) {
+		const duplicate = await findDuplicate(app, settings, url);
+		if (duplicate) {
+			new Notice(
+				`LinkVault: already filed in ${duplicate.basename} — nothing written.`
+			);
+			return;
+		}
+	}
+
+	let targetFile: TFile;
+	let createdNew = false;
+
+	if (choice.kind === "existing") {
+		targetFile = choice.targetFile;
+	} else {
+		// No existing note fits, so make one.
+		const note = await resolveNewNote(
+			provider,
+			settings,
+			metadata,
+			truncatedContent,
+			choice.kind === "create" ? choice.proposedName : null,
+			kbFiles.map((f) => f.basename)
+		);
+
+		// The one case that still leaves a link unfiled: no usable name could be produced.
+		if (note === null) {
+			new Notice(
+				`LinkVault: could not name a note for "${metadata.title}" — left in ${settings.inboxFolder}.`
+			);
+			return;
+		}
+
+		({ targetFile, createdNew } = await createKBFile(
+			app, settings, note, kbFiles
+		));
+	}
+
+	const targetFileName = targetFile.basename;
+	log(settings, "Target KB note:", targetFileName, { createdNew });
 
 	const targetContent = await app.vault.cachedRead(targetFile);
 	const sectionName = await matchSection(

@@ -23,8 +23,9 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 ## Features
 
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
-- Three-tier fuzzy matching (exact, case-insensitive, fallback) so links always land somewhere
-- Creates new KB files when no existing file fits the content
+- Never files a link into a note the model didn't actually choose
+- Creates a new note, named after the subject area, when nothing existing fits — matching the structure of your hand-written notes
+- Skips links already filed anywhere in your KB, and tells you which note holds them — one URL lives in one note, so filing the same link into a second note has to be done by hand
 - Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
@@ -34,12 +35,77 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 
 1. You clip a web page into your **Inbox** folder (via [Obsidian Web Clipper](https://obsidian.md/clipper) or any method)
 2. Open the clipped note and run **"LinkVault: Process Link to KB"** from the command palette
-3. The plugin makes 3 AI calls:
+3. The plugin makes AI calls:
    - **Extract** — pulls a title and one-sentence summary from the note
-   - **Match file** — picks the best KB index file
-   - **Match section** — picks the best H2 section within that file
-4. A new table row is inserted into the matched section
-5. The inbox note is moved to trash (configurable)
+   - **Match file** — picks a KB note, proposes a new one, or declines
+   - **Name new note** — only when nothing matched: names a note from the link's content
+   - **Match section** — picks an H2 section within the chosen note
+4. If the URL is already filed anywhere in your KB, you're told where and nothing is written
+5. A new table row is inserted into the matched section
+6. The inbox note is moved to trash (configurable)
+
+**Choosing the note never guesses.** If no existing note covers the link, LinkVault creates one
+rather than filing it somewhere approximate. A link is left in your Inbox only when no usable name
+can be produced.
+
+**Choosing the section does fall back.** If the note is clear but no section fits, the link goes
+into that note's first section and you're told — a row in the wrong section is a two-second fix,
+unlike a link filed under the wrong topic.
+
+### The match contract
+
+Match prompts ask the model to reply with exactly one line:
+
+```
+MATCH: <exact name from the list>
+NEW: <short hyphenated topic name>     (file match only)
+NONE
+```
+
+`NONE`, an unrecognised name, or an unparseable reply all mean "no existing note fits". For the
+file match that starts the new-note flow below; for the section match it falls back to the note's
+first section.
+
+If you've customised a prompt from an older release, a reply that *exactly* names a file or section
+is still accepted — but a reply that merely contains a name is not, since that was the guess behind
+misrouted links.
+
+### New notes
+
+A created note is named after the **subject area** the link belongs to, never the link itself. The
+naming step is given your existing note names so it matches their level of generality — a link
+about one company's valuation creates `Space-Industry`, not `SpaceX-Valuation`, leaving a note that
+collects further links on that subject.
+
+Names are normalised to `Title-Case-Hyphenated` and validated before anything is created:
+non-empty, 60 characters or fewer, no path separators, and not leftover placeholder text. A name
+matching an existing note reuses that note rather than creating a second one.
+
+New notes follow the same structure as hand-written ones:
+
+```markdown
+# Space Industry
+
+#space #aerospace #launch-vehicles
+
+[[Index]] → Links on the commercial space industry, launch providers, and satellite operators.
+
+---
+
+## Launch Providers & Operators
+
+| Title | Link | Key Points |
+|------|------|------|
+```
+
+The section heading describes the kind of link it holds, matching how your existing notes are
+organised, rather than a fixed "Overview". The backlink points at your configured index note, and
+the table header is your configured header marker, so a customised marker still produces a valid
+table.
+
+If you never edited the prompts, they update automatically when the plugin updates — a stored
+prompt identical to an older shipped default is replaced. Prompts you actually customised are
+never overwritten.
 
 ## KB Index
 
