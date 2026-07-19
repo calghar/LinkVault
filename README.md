@@ -25,7 +25,7 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
 - Never files a link into a note the model didn't actually choose
 - Creates a new note, named after the subject area, when nothing existing fits — matching the structure of your hand-written notes
-- Skips links already filed anywhere in your KB, and tells you where they live
+- Skips links already filed anywhere in your KB, and tells you which note holds them — one URL lives in one note, so filing the same link into a second note has to be done by hand
 - Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
