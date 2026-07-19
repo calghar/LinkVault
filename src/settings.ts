@@ -61,20 +61,39 @@ Reply ONLY with valid JSON — no markdown fences, no explanation.
 Content:
 {{content}}`,
 
-	fileMatchPrompt: `Content: "{{title}} — {{keypoints}}"
+	fileMatchPrompt: `You are filing a saved link into a knowledge base. Each file below covers ONE specific topic.
 
-Available knowledge base files:
+Files:
 {{fileList}}
 
-Which file is the best match? Reply with ONLY the exact filename (no extension, no explanation).
-If none fit well, reply: NEW: Descriptive-Theme-Name`,
+Link: "{{title}} — {{keypoints}}"
 
-	sectionMatchPrompt: `Content: "{{title}} — {{keypoints}}"
+A file is a match ONLY if the link is squarely about that file's topic. A link that merely
+touches the topic, or that covers many topics with no single focus, is NOT a match.
 
-Sections in the target file:
+Reply with exactly one line, one of these three forms:
+MATCH: <exact filename from the list above>
+NEW: <short hyphenated topic name you invent for this link>
+NONE
+
+Use NONE if the link has no single clear topic, or if you are unsure.
+No explanation. No other text.`,
+
+	sectionMatchPrompt: `You are filing a saved link into one section of the note "{{targetFile}}".
+
+Sections:
 {{sectionList}}
 
-Reply with ONLY the exact section name that best fits this content.`,
+Link: "{{title}} — {{keypoints}}"
+
+A section is a match ONLY if the link is squarely about that section's subject.
+
+Reply with exactly one line, one of these two forms:
+MATCH: <exact section name from the list above>
+NONE
+
+Use NONE if no section clearly fits, or if you are unsure.
+No explanation. No other text.`,
 
 	contentTruncateChars: 3000,
 	debugMode: false,

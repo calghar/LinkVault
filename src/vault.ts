@@ -52,35 +52,20 @@ export function getSections(content: string): string[] {
 	return sections;
 }
 
-// Tries exact match, then case-insensitive contains, then falls back to first item.
-export function fuzzyMatch(
+// Resolves a response to one of `items`, or null when it resolves to none of them.
+//
+// This used to fall back to `items[0]` when nothing matched, which meant every link
+// landed somewhere whether or not the model had actually chosen it \u2014 the mechanism
+// behind silently misrouted links. Callers now handle null explicitly.
+//
+// The old case-insensitive *substring* pass is gone with it: "contains a name" is a
+// guess, not a match.
+export function resolveMatch(
 	response: string,
-	items: string[],
-	label: string
-): { matched: string; wasExact: boolean } {
-	if (items.length === 0) {
-		throw new Error(`No ${label} available to match against.`);
-	}
-
-	const cleaned = response.trim();
-
-	const exact = items.find((item) => item === cleaned);
-	if (exact) return { matched: exact, wasExact: true };
-
-	const lowerCleaned = cleaned.toLowerCase();
-	const fuzzy = items.find((item) => {
-		const lowerItem = item.toLowerCase();
-		return (
-			lowerItem.includes(lowerCleaned) ||
-			lowerCleaned.includes(lowerItem)
-		);
-	});
-	if (fuzzy) return { matched: fuzzy, wasExact: false };
-
-	new Notice(
-		`\u26a0\ufe0f LinkVault: Could not match ${label} "${cleaned}", using "${items[0]}"`
-	);
-	return { matched: items[0], wasExact: false };
+	items: string[]
+): string | null {
+	const cleaned = response.trim().toLowerCase();
+	return items.find((item) => item.toLowerCase() === cleaned) ?? null;
 }
 
 // Inserts a row after the separator line of the matched section's table.
@@ -114,6 +99,93 @@ export function insertTableRow(
 
 	const table = `\n${headerMarker}\n|-------|------|-----------|\n${newRow}\n`;
 	return content.slice(0, insertPos) + table + content.slice(insertPos);
+}
+
+// ---- New-file name validation ----
+
+const MAX_NAME_LENGTH = 60;
+
+// Placeholder text that must never become a filename. The first entry shipped as a literal
+// in the old default prompt, and small models copied it verbatim rather than substituting a
+// real theme — creating notes actually named "Descriptive-Theme-Name". Users who customised
+// that prompt still carry the literal, so it stays rejected.
+const NAME_PLACEHOLDERS = [
+	"descriptive-theme-name",
+	"short hyphenated topic name you invent for this link",
+	"topic-name",
+	"theme-name",
+];
+
+export type NameCheck = { ok: true; name: string } | { ok: false; reason: string };
+
+// Validates a proposed KB filename, whether proposed by the model or typed by the user.
+// Both go through here so the second route cannot bypass the guard.
+export function validateNewName(
+	proposed: string,
+	existingBasenames: string[]
+): NameCheck {
+	const name = proposed.trim();
+
+	if (name.length === 0) return { ok: false, reason: "Name is empty." };
+	if (name.length > MAX_NAME_LENGTH)
+		return {
+			ok: false,
+			reason: `Name is longer than ${MAX_NAME_LENGTH} characters.`,
+		};
+	if (/[/\\:]/.test(name))
+		return { ok: false, reason: "Name cannot contain / \\ or :" };
+	if (name.startsWith("."))
+		return { ok: false, reason: "Name cannot start with a dot." };
+	if (NAME_PLACEHOLDERS.includes(name.toLowerCase()))
+		return {
+			ok: false,
+			reason: "Name is prompt placeholder text, not a real topic.",
+		};
+
+	// An existing file wins over creating a near-duplicate of it.
+	const existing = existingBasenames.find(
+		(b) => b.toLowerCase() === name.toLowerCase()
+	);
+	if (existing) return { ok: true, name: existing };
+
+	return { ok: true, name };
+}
+
+// ---- Duplicate link detection ----
+
+// Normalises a URL for comparison: scheme and host are case-insensitive, a trailing slash
+// is not meaningful. Query and fragment are left alone — two URLs differing there are
+// treated as distinct, which errs toward filing a new link rather than silently dropping it.
+export function normalizeUrl(url: string): string {
+	const trimmed = url.trim();
+	if (trimmed.length === 0) return "";
+	try {
+		const parsed = new URL(trimmed);
+		const path = parsed.pathname.replace(/\/$/, "");
+		return `${parsed.protocol.toLowerCase()}//${parsed.host.toLowerCase()}${path}${parsed.search}${parsed.hash}`;
+	} catch {
+		return trimmed.replace(/\/$/, "").toLowerCase();
+	}
+}
+
+// Returns the KB file already holding this URL, or null. Scans every KB file rather than
+// only the matched target, so a link refiled to a different note than last time is still
+// caught. Reads come from Obsidian's cache and involve no LLM calls.
+export async function findDuplicate(
+	app: App,
+	settings: LinkVaultSettings,
+	url: string
+): Promise<TFile | null> {
+	const needle = normalizeUrl(url);
+	if (needle.length === 0) return null;
+
+	for (const file of getKBFiles(app, settings)) {
+		const content = await app.vault.cachedRead(file);
+		for (const match of content.matchAll(/\((https?:\/\/[^)\s]+)\)/g)) {
+			if (normalizeUrl(match[1]) === needle) return file;
+		}
+	}
+	return null;
 }
 
 export function buildNewKBFile(themeName: string): string {

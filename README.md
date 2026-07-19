@@ -23,8 +23,9 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 ## Features
 
 - Supports Anthropic (Claude), Ollama (local/free), and OpenRouter
-- Three-tier fuzzy matching (exact, case-insensitive, fallback) so links always land somewhere
-- Creates new KB files when no existing file fits the content
+- Links the model can't confidently place are left in your Inbox rather than filed somewhere wrong
+- Skips links already filed anywhere in your KB, and tells you where they live
+- Creates new KB files when no existing file fits the content, with the proposed name validated first
 - Maintains an auto-generated index of your KB files and sections (never touches your curated notes)
 - All prompts are customisable via template variables
 - Retries transient errors (rate limits, 5xx) with exponential backoff
@@ -36,10 +37,32 @@ An Obsidian plugin that saves web-clipped links into your knowledge base. One co
 2. Open the clipped note and run **"LinkVault: Process Link to KB"** from the command palette
 3. The plugin makes 3 AI calls:
    - **Extract** — pulls a title and one-sentence summary from the note
-   - **Match file** — picks the best KB index file
-   - **Match section** — picks the best H2 section within that file
-4. A new table row is inserted into the matched section
-5. The inbox note is moved to trash (configurable)
+   - **Match file** — picks a KB file, proposes a new one, or declines
+   - **Match section** — picks an H2 section within that file, or declines
+4. If the URL is already filed anywhere in your KB, you're told where and nothing is written
+5. A new table row is inserted into the matched section
+6. The inbox note is moved to trash (configurable)
+
+If either match is declined, **nothing is written** and the note stays in your Inbox, ready to
+process again. LinkVault would rather file nothing than file it wrong.
+
+### The match contract
+
+Match prompts ask the model to reply with exactly one line:
+
+```
+MATCH: <exact name from the list>
+NEW: <short hyphenated topic name>     (file match only)
+NONE
+```
+
+`NONE`, an unrecognised name, or an unparseable reply all count as "not confident". If you've
+customised a prompt from an older release, a reply that *exactly* names a file or section is still
+accepted — but a reply that merely contains a name is not, since that was the guess behind
+misrouted links.
+
+Proposed new-file names are validated before anything is created: non-empty, 60 characters or
+fewer, no path separators, and not leftover placeholder text from a prompt.
 
 ## KB Index
 
