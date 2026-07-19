@@ -80,24 +80,20 @@ async function extractMetadata(
 	}
 }
 
-// Either a target the model confidently chose, or the material a caller needs to ask the
-// user instead. The candidate list and proposed name are carried on the unconfident branch
-// rather than discarded, so the follow-up confirmation modal can consume them directly.
-type FileMatch =
-	| { kind: "resolved"; targetFile: TFile; targetFileName: string; createdNew: boolean }
-	| { kind: "unconfident"; candidates: string[]; proposedName: string | null };
+// What the file-match call decided, before anything is written. Selecting an existing file and
+// naming a new one are kept separate from acting on either, so the duplicate check can run in
+// between — nothing is created until the link is known to be new.
+type FileChoice =
+	| { kind: "existing"; targetFile: TFile }
+	| { kind: "create"; proposedName: string | null }
+	| { kind: "unnamed" };
 
-async function matchKBFile(
-	app: App,
+async function chooseKBFile(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
-	metadata: ExtractedMetadata
-): Promise<FileMatch> {
-	const kbFiles = getKBFiles(app, settings);
-	if (kbFiles.length === 0) {
-		throw new Error(`No KB files found in "${settings.kbFolder}" folder.`);
-	}
-
+	metadata: ExtractedMetadata,
+	kbFiles: TFile[]
+): Promise<FileChoice> {
 	const fileNames = kbFiles.map((f) => f.basename);
 	log(settings, "Available KB files:", fileNames);
 
@@ -113,64 +109,101 @@ async function matchKBFile(
 
 	if (reply.kind === "match") {
 		const found = kbFiles.find((f) => f.basename === reply.name);
-		if (found) {
-			return {
-				kind: "resolved",
-				targetFile: found,
-				targetFileName: reply.name,
-				createdNew: false,
-			};
-		}
+		if (found) return { kind: "existing", targetFile: found };
 	}
 
-	if (reply.kind === "new") {
-		const check = validateNewName(reply.name, fileNames);
-		if (!check.ok) {
-			log(settings, "Rejected proposed name:", reply.name, check.reason);
-			return { kind: "unconfident", candidates: fileNames, proposedName: reply.name };
-		}
-		// The name may resolve to a file that already exists, in which case use it.
-		const existing = kbFiles.find((f) => f.basename === check.name);
-		if (existing) {
-			return {
-				kind: "resolved",
-				targetFile: existing,
-				targetFileName: check.name,
-				createdNew: false,
-			};
-		}
-		const filePath = normalizePath(`${settings.kbFolder}/${check.name}.md`);
-		const targetFile = await app.vault.create(
-			filePath,
-			buildNewKBFile(check.name)
-		);
-		new Notice(`Created new KB file: ${check.name}`);
-		return {
-			kind: "resolved",
-			targetFile,
-			targetFileName: check.name,
-			createdNew: true,
-		};
-	}
-
-	return { kind: "unconfident", candidates: fileNames, proposedName: null };
+	// "No existing file fits" is the reason to create one, not a reason to stop. A name the
+	// model volunteered is used as-is; otherwise one is derived from the note's content.
+	if (reply.kind === "new") return { kind: "create", proposedName: reply.name };
+	return { kind: "unnamed" };
 }
 
-// Returns the chosen section, or null when the model did not confidently choose one.
-// A file with no sections, or exactly one, has no choice to make and is not a guess.
+// Derives a name for a new KB note from the link's content. Returns null when the call fails —
+// the caller then leaves the link unfiled rather than inventing a name of its own.
+async function deriveNoteName(
+	provider: LLMProvider,
+	settings: LinkVaultSettings,
+	metadata: ExtractedMetadata,
+	content: string
+): Promise<string | null> {
+	try {
+		const prompt = renderPrompt(settings.newNotePrompt, {
+			title: metadata.title,
+			keypoints: metadata.keypoints,
+			content,
+		});
+		const raw = await provider.ask(prompt);
+		log(settings, "New note name raw response:", raw);
+		return raw.trim().split("\n")[0]?.trim() ?? null;
+	} catch (err) {
+		console.error(LOG_PREFIX, "Naming a new note failed:", err);
+		return null;
+	}
+}
+
+// Settles on a name for a new note, or null when none can be had.
+//
+// A name the model volunteered during matching is tried first, since it cost nothing. If it
+// fails validation — a placeholder echo, a path separator — that is not the end: the dedicated
+// naming call gets a turn before the link is abandoned.
+async function resolveNewNoteName(
+	provider: LLMProvider,
+	settings: LinkVaultSettings,
+	metadata: ExtractedMetadata,
+	content: string,
+	proposedName: string | null,
+	existingBasenames: string[]
+): Promise<string | null> {
+	if (proposedName !== null) {
+		const check = validateNewName(proposedName, existingBasenames);
+		if (check.ok) return check.name;
+		log(settings, "Proposed name rejected:", proposedName, check.reason);
+	}
+
+	const derived = await deriveNoteName(provider, settings, metadata, content);
+	if (derived === null) return null;
+
+	const check = validateNewName(derived, existingBasenames);
+	if (check.ok) return check.name;
+
+	log(settings, "Derived name rejected:", derived, check.reason);
+	return null;
+}
+
+// Turns a validated name into a target, reusing an existing note when the name collides.
+async function createKBFile(
+	app: App,
+	settings: LinkVaultSettings,
+	name: string,
+	kbFiles: TFile[]
+): Promise<{ targetFile: TFile; createdNew: boolean }> {
+	const existing = kbFiles.find((f) => f.basename === name);
+	if (existing) return { targetFile: existing, createdNew: false };
+
+	const filePath = normalizePath(`${settings.kbFolder}/${name}.md`);
+	const targetFile = await app.vault.create(filePath, buildNewKBFile(name));
+	new Notice(`Created new KB note: ${name}`);
+	return { targetFile, createdNew: true };
+}
+
+// Picks a section within an already-chosen file.
+//
+// Unlike the file choice, this falls back rather than declining: a link in the wrong section of
+// the right note is visible and trivially moved, whereas an unfiled link is work. The fallback
+// is announced so it is never silent.
 async function matchSection(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
 	metadata: ExtractedMetadata,
 	targetFileName: string,
 	targetContent: string
-): Promise<{ section: string | null; candidates: string[] }> {
+): Promise<string> {
 	const sections = getSections(targetContent);
 
-	if (sections.length === 0) return { section: "Overview", candidates: [] };
-	if (sections.length === 1)
-		return { section: sections[0], candidates: sections };
+	if (sections.length === 0) return "Overview";
+	if (sections.length === 1) return sections[0];
 
+	let chosen: string | null = null;
 	try {
 		const prompt = renderPrompt(settings.sectionMatchPrompt, {
 			title: metadata.title,
@@ -181,14 +214,17 @@ async function matchSection(
 		const raw = await provider.ask(prompt);
 		log(settings, "Section match raw response:", raw);
 		const reply = parseMatchReply(raw, sections);
-		const section =
-			reply.kind === "match" ? resolveMatch(reply.name, sections) : null;
-		return { section, candidates: sections };
+		if (reply.kind === "match") chosen = resolveMatch(reply.name, sections);
 	} catch (err) {
-		// A failed call is not a licence to guess — the caller treats null as not confident.
 		console.error(LOG_PREFIX, "Section match failed:", err);
-		return { section: null, candidates: sections };
 	}
+
+	if (chosen) return chosen;
+
+	new Notice(
+		`LinkVault: no clear section in ${targetFileName} — filed under "${sections[0]}".`
+	);
+	return sections[0];
 }
 
 export async function processLink(
@@ -226,9 +262,17 @@ export async function processLink(
 	);
 	log(settings, "Extracted metadata:", metadata);
 
-	let match: FileMatch;
+	const kbFiles = getKBFiles(app, settings);
+	if (kbFiles.length === 0) {
+		new Notice(
+			`LinkVault: no KB notes found in "${settings.kbFolder}".`
+		);
+		return;
+	}
+
+	let choice: FileChoice;
 	try {
-		match = await matchKBFile(app, provider, settings, metadata);
+		choice = await chooseKBFile(provider, settings, metadata, kbFiles);
 	} catch (err) {
 		new Notice(
 			`LinkVault: ${err instanceof Error ? err.message : String(err)}`
@@ -236,21 +280,8 @@ export async function processLink(
 		return;
 	}
 
-	// Not confident: file nothing rather than guess. The note stays in the Inbox and can be
-	// processed again. Replaced by a confirmation dialog in routing-confirmation-modal.
-	if (match.kind === "unconfident") {
-		log(settings, "File match not confident; leaving note in inbox.");
-		new Notice(
-			`LinkVault: no confident match for "${metadata.title}" — left in ${settings.inboxFolder}.`
-		);
-		return;
-	}
-
-	const { targetFile, targetFileName, createdNew } = match;
-	log(settings, "Matched KB file:", targetFileName);
-
-	// Checked across the whole KB, not just the target, so a link refiled to a different
-	// note than last time is still caught. Runs before any write.
+	// Before anything is created or written: a URL already in the KB needs no target at all,
+	// and checking here means a duplicate never leaves an empty new note behind.
 	if (url.length > 0) {
 		const duplicate = await findDuplicate(app, settings, url);
 		if (duplicate) {
@@ -261,18 +292,42 @@ export async function processLink(
 		}
 	}
 
+	let targetFile: TFile;
+	let createdNew = false;
+
+	if (choice.kind === "existing") {
+		targetFile = choice.targetFile;
+	} else {
+		// No existing note fits, so make one.
+		const name = await resolveNewNoteName(
+			provider,
+			settings,
+			metadata,
+			truncatedContent,
+			choice.kind === "create" ? choice.proposedName : null,
+			kbFiles.map((f) => f.basename)
+		);
+
+		// The one case that still leaves a link unfiled: no usable name could be produced.
+		if (name === null) {
+			new Notice(
+				`LinkVault: could not name a note for "${metadata.title}" — left in ${settings.inboxFolder}.`
+			);
+			return;
+		}
+
+		({ targetFile, createdNew } = await createKBFile(
+			app, settings, name, kbFiles
+		));
+	}
+
+	const targetFileName = targetFile.basename;
+	log(settings, "Target KB note:", targetFileName, { createdNew });
+
 	const targetContent = await app.vault.cachedRead(targetFile);
-	const { section: sectionName } = await matchSection(
+	const sectionName = await matchSection(
 		provider, settings, metadata, targetFileName, targetContent
 	);
-
-	if (sectionName === null) {
-		log(settings, "Section match not confident; leaving note in inbox.");
-		new Notice(
-			`LinkVault: no confident section in ${targetFileName} — left in ${settings.inboxFolder}.`
-		);
-		return;
-	}
 	log(settings, "Matched section:", sectionName);
 
 	const newRow = formatTableRow(metadata.title, url, metadata.keypoints);

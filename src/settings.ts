@@ -27,6 +27,7 @@ export interface LinkVaultSettings {
 	extractPrompt: string;
 	fileMatchPrompt: string;
 	sectionMatchPrompt: string;
+	newNotePrompt: string;
 	contentTruncateChars: number;
 
 	// Debug
@@ -94,6 +95,17 @@ NONE
 
 Use NONE if no section clearly fits, or if you are unsure.
 No explanation. No other text.`,
+
+	newNotePrompt: `You are creating a new note in a knowledge base to hold this saved link.
+No existing note covers it.
+
+Link title: {{title}}
+Summary: {{keypoints}}
+Note content:
+{{content}}
+
+Reply with ONLY a short note name describing the topic this link belongs to.
+Use hyphens instead of spaces. Two to four words. No explanation, no quotes.`,
 
 	contentTruncateChars: 3000,
 	debugMode: false,
@@ -429,6 +441,23 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.sectionMatchPrompt)
 					.onChange(async (value) => {
 						this.plugin.settings.sectionMatchPrompt = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(promptsEl)
+			.setName("New note prompt")
+			.setDesc(
+				"Prompt to name a new note when no existing note matches. Variables: {{title}}, {{keypoints}}, {{content}}"
+			)
+			.addTextArea((text) => {
+				text.inputEl.rows = 8;
+				text.inputEl.cols = 50;
+				text.inputEl.addClass("linkvault-prompt");
+				text.setPlaceholder(DEFAULT_SETTINGS.newNotePrompt)
+					.setValue(this.plugin.settings.newNotePrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.newNotePrompt = value;
 						await this.plugin.saveSettings();
 					});
 			});

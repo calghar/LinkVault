@@ -15,7 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Changed
 
 - **Match prompts rewritten.** The model now replies `MATCH: <name>`, `NEW: <name>`, or `NONE`, and is told explicitly that a link touching a topic in passing is not a match. Measured on a 13-note KB with a local `qwen3:4b-instruct`, correct routing over a 15-case set rose from 11/15 to 13–14/15, with all three "no good match" cases correctly declined in every run.
-- **Links that cannot be confidently routed are no longer filed.** They stay in the Inbox with a notice, and can be processed again. Previously an unmatched response fell through to the *first* file or section in the list, so links were silently misrouted.
+- **A new note is created when nothing matches.** When no existing note covers a link, LinkVault names one from the link's content and files it there. A link is only left in the Inbox if no usable name can be produced. Previously an unmatched response fell through to the *first* file in the list, so links were silently misrouted.
+- **New note names follow your KB's convention.** Generated names are normalised to `Title-Case-Hyphenated`, matching notes like `AI-Security`; existing acronyms are preserved rather than lowercased.
+- **A wrong section no longer blocks filing.** If the note is clear but the section isn't, the link goes into that note's first section and you're told. Choosing the *note* still never guesses.
+- Duplicate detection now runs before a note is created, so a link you've already filed can't leave an empty note behind.
 - Customised prompts written before this release keep working: a reply that exactly names a file or section is still accepted. Replies that merely *contain* a name are not — that was the guess behind the misrouting.
 - **Prompts you never edited now update with the plugin.** Saved settings take precedence over defaults, so anyone who had changed any setting held a frozen copy of the old prompts and would never have received this rewrite. A stored prompt identical to a previously shipped default is replaced on load; a prompt you actually edited is left exactly as you wrote it.
 

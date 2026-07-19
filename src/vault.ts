@@ -109,22 +109,48 @@ const MAX_NAME_LENGTH = 60;
 // in the old default prompt, and small models copied it verbatim rather than substituting a
 // real theme — creating notes actually named "Descriptive-Theme-Name". Users who customised
 // that prompt still carry the literal, so it stays rejected.
+// Compared against the normalised, lowercased name, so entries are hyphenated even where the
+// prompt text they came from used spaces.
 const NAME_PLACEHOLDERS = [
 	"descriptive-theme-name",
-	"short hyphenated topic name you invent for this link",
+	"short-hyphenated-topic-name-you-invent-for-this-link",
+	"short-note-name-describing-the-topic-this-link-belongs-to",
 	"topic-name",
 	"theme-name",
+	"new-note",
 ];
 
 export type NameCheck = { ok: true; name: string } | { ok: false; reason: string };
 
-// Validates a proposed KB filename, whether proposed by the model or typed by the user.
-// Both go through here so the second route cannot bypass the guard.
+// Models return names in inconsistent case ("productivity-technology-culture" next to
+// "Hand-tool-joinery-techniques"). KB notes are Title-Case-Hyphenated — AI-Security,
+// Low-Level-Security — so canonicalise before validating, and the existing-file collision
+// check below then compares like with like.
+//
+// Words already containing an interior capital (AI, CodeQL, eBPF) are left alone rather than
+// lowercased into something wrong.
+export function normalizeNoteName(name: string): string {
+	return name
+		.trim()
+		.replaceAll(/\s+/g, "-")
+		.split("-")
+		.filter((word) => word.length > 0)
+		.map((word) =>
+			/[A-Z]/.test(word.slice(1))
+				? word
+				: word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+		)
+		.join("-");
+}
+
+// Validates a KB filename from any origin — proposed by the match call, derived by the naming
+// call, or typed by the user. Every route goes through here so none can bypass the guard.
+// Returns the canonical form on success, which may differ in case from the input.
 export function validateNewName(
 	proposed: string,
 	existingBasenames: string[]
 ): NameCheck {
-	const name = proposed.trim();
+	const name = normalizeNoteName(proposed);
 
 	if (name.length === 0) return { ok: false, reason: "Name is empty." };
 	if (name.length > MAX_NAME_LENGTH)
