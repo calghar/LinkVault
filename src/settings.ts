@@ -117,6 +117,7 @@ an event, a metric, or a piece of analysis.
 
 Also give a heading for the note's first section, describing what kind of link this is. Existing
 notes use headings like "Attack Research", "Tools & Monitoring", "Key Blogs", "Industry Reports".
+Write the heading with normal spaces between words — hyphens belong in the note name, not here.
 
 Reply ONLY with valid JSON — no markdown fences, no explanation:
 {"name": "Broad-Subject-Name", "tags": ["tag-one","tag-two","tag-three"], "description": "one line saying what this note collects", "section": "Section Heading"}`,

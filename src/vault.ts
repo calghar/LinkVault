@@ -259,7 +259,19 @@ function sanitizeSection(section: string): string {
 		.replaceAll("|", "")
 		.replace(/^#+\s*/, "")
 		.trim();
-	return cleaned.length > 0 ? cleaned : DEFAULT_SECTION;
+
+	if (cleaned.length === 0) return DEFAULT_SECTION;
+
+	// Models sometimes carry the note name's hyphenation into the heading, yielding
+	// "Company-Valuations-and-Market-Performance". Headings in this KB separate words with
+	// spaces. Only a heading that is entirely hyphenated is rewritten — a single hyphen is
+	// usually a real compound ("Multi-Cloud Reports", "AI Red-Teaming"), so it is left alone.
+	const hyphens = cleaned.match(/-/g)?.length ?? 0;
+	if (!cleaned.includes(" ") && hyphens >= 2) {
+		return cleaned.replaceAll("-", " ");
+	}
+
+	return cleaned;
 }
 
 // Builds a new KB note in the same shape as the hand-written ones: title, tag line, a backlink
