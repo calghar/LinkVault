@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Planned
+
+- **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.
+- **MLX provider** — native Apple Silicon inference, typically faster than the llama.cpp backend for local models.
+- **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
+
+## [1.2.0] - 2026-08-08
+
 ### Changed
 
 - **The model is now shown what each note collects.** The file-match prompt listed bare filenames, so when two names were plausible for a link the model had nothing to separate them by and picked wrong — consistently, not randomly. Each candidate now carries the description after its `[[Index]] →` backlink and its section headings. A note with neither is still listed and still matchable on its name alone. Replies are resolved against note *names* only, exactly as before.
@@ -34,12 +42,6 @@ Not comparable with the "13–14/15" quoted for 1.1.0 — that knowledge base ha
 ### Internal
 
 - A longer summary and an article excerpt for the matcher were built, measured and removed: 6/15 on their own against a 7/15 baseline, and no gain at all alongside the richer file list. More prose describes the same axis the summary already covered.
-
-### Planned
-
-- **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.
-- **MLX provider** — native Apple Silicon inference, typically faster than the llama.cpp backend for local models.
-- **Growth** — mobile support (flip `isDesktopOnly`), batch-process the whole Inbox, and a `normalizePath()` pass for clean re-submission.
 
 ## [1.1.0] - 2026-07-19
 
