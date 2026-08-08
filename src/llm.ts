@@ -230,6 +230,13 @@ class OllamaProvider implements LLMProvider {
 						model: this.settings.model,
 						prompt: prompt,
 						stream: false,
+						// Left out: temperature defaults to 0.7 on a classification
+						// task, num_ctx to the server's 4096, maxTokens to nothing.
+						options: {
+							temperature: 0,
+							num_ctx: this.settings.ollamaNumCtx,
+							num_predict: this.settings.maxTokens,
+						},
 					}),
 					throw: false,
 				});
@@ -353,6 +360,14 @@ class OpenRouterProvider implements LLMProvider {
 		}
 		return true;
 	}
+}
+
+// Ollama is the only provider the plugin sends a window to; the HTTP ones report an explicit
+// context_limit error instead. Null means there is nothing to check a prompt against.
+export function configuredContextWindow(
+	settings: LinkVaultSettings
+): number | null {
+	return settings.provider === "ollama" ? settings.ollamaNumCtx : null;
 }
 
 export function createProvider(

@@ -12,6 +12,9 @@ node_modules/
 # Temporary files
 tmp/
 
+# Spec workflow artifacts, kept local
+openspec/
+
 # OS
 .DS_Store
 Thumbs.db

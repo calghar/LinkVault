@@ -1,9 +1,16 @@
 import { App, TFile, Notice, normalizePath } from "obsidian";
 import type { LinkVaultSettings } from "./settings";
-import { createProvider, type LLMProvider } from "./llm";
 import {
+	configuredContextWindow,
+	createProvider,
+	type LLMProvider,
+} from "./llm";
+import {
+	describeCandidate,
 	getKBFiles,
 	getSections,
+	sanitizePromptText,
+	truncate,
 	resolveMatch,
 	insertTableRow,
 	buildNewKBFile,
@@ -17,9 +24,34 @@ import { parseMatchReply } from "./match";
 
 const LOG_PREFIX = "[LinkVault]";
 
-interface ExtractedMetadata {
+export interface ExtractedMetadata {
 	title: string;
 	keypoints: string;
+	kind: string;
+	domain: string;
+}
+
+const CELL_TITLE_MAX = 60;
+const CELL_KEYPOINTS_MAX = 80;
+const AXIS_MAX_CHARS = 40;
+
+// Summary, plus " [", both axes, ", " between them, "]".
+const ROUTING_SUMMARY_MAX = CELL_KEYPOINTS_MAX + 2 * AXIS_MAX_CHARS + 5;
+
+// No tokeniser ships with the plugin; four characters per token is the usual English ratio. Good
+// enough to turn a silent truncation into a warning, not good enough to gate on.
+const CHARS_PER_TOKEN = 4;
+
+// Sections are named by artefact kind — "Key Blogs", "Notable Papers", "Tools & Monitoring" — an
+// axis the summary alone does not carry. Measured: section accuracy 9/15 to 11/15.
+export function routingSummary(metadata: ExtractedMetadata): string {
+	const axes = [metadata.kind, metadata.domain].filter((v) => v.length > 0);
+	const composed =
+		axes.length > 0
+			? `${metadata.keypoints} [${axes.join(", ")}]`
+			: metadata.keypoints;
+	// Sanitised here rather than at extraction: this is where model output re-enters a prompt.
+	return sanitizePromptText(composed, ROUTING_SUMMARY_MAX);
 }
 
 function log(settings: LinkVaultSettings, ...args: unknown[]): void {
@@ -53,10 +85,6 @@ function extractJSON(raw: string): Record<string, string> | null {
 	}
 }
 
-function truncate(value: string, max: number): string {
-	return value.length > max ? value.slice(0, max - 3) + "..." : value;
-}
-
 async function extractMetadata(
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
@@ -65,18 +93,20 @@ async function extractMetadata(
 ): Promise<ExtractedMetadata> {
 	try {
 		const prompt = renderPrompt(settings.extractPrompt, { content });
-		const raw = await provider.ask(prompt);
+		const raw = await ask(provider, settings, prompt, "extract");
 		log(settings, "Extract raw response:", raw);
 
 		const parsed = extractJSON(raw);
 		return {
-			title: truncate(parsed?.title ?? fallbackTitle, 60),
-			keypoints: truncate(parsed?.keypoints ?? "", 80),
+			title: truncate(parsed?.title ?? fallbackTitle, CELL_TITLE_MAX),
+			keypoints: truncate(parsed?.keypoints ?? "", CELL_KEYPOINTS_MAX),
+			kind: truncate(parsed?.kind ?? "", AXIS_MAX_CHARS),
+			domain: truncate(parsed?.domain ?? "", AXIS_MAX_CHARS),
 		};
 	} catch (err) {
 		console.error(LOG_PREFIX, "Extract failed:", err);
 		new Notice("LinkVault: extract failed, using fallback title.");
-		return { title: fallbackTitle, keypoints: "" };
+		return { title: fallbackTitle, keypoints: "", kind: "", domain: "" };
 	}
 }
 
@@ -88,21 +118,52 @@ type FileChoice =
 	| { kind: "create"; proposedName: string | null }
 	| { kind: "unnamed" };
 
+// An oversized prompt is truncated by the provider without saying so. Every prompt is checked,
+// not only the file match: the new-note prompt carries the whole truncated note and is the largest.
+async function ask(
+	provider: LLMProvider,
+	settings: LinkVaultSettings,
+	prompt: string,
+	label: string
+): Promise<string> {
+	const contextWindow = configuredContextWindow(settings);
+	const estimate = Math.ceil(prompt.length / CHARS_PER_TOKEN);
+
+	if (
+		contextWindow !== null &&
+		estimate + settings.maxTokens > contextWindow
+	) {
+		new Notice(
+			`LinkVault: the ${label} prompt is about ${estimate} tokens and the context window is ${contextWindow}. Raise "Context window" in settings.`
+		);
+	}
+
+	return provider.ask(prompt);
+}
+
 async function chooseKBFile(
+	app: App,
 	provider: LLMProvider,
 	settings: LinkVaultSettings,
 	metadata: ExtractedMetadata,
 	kbFiles: TFile[]
 ): Promise<FileChoice> {
+	// Two lists, deliberately different: the model reads names with their scope, its reply is
+	// resolved against bare names only.
 	const fileNames = kbFiles.map((f) => f.basename);
-	log(settings, "Available KB files:", fileNames);
+	const described = await Promise.all(
+		kbFiles.map(async (f) =>
+			describeCandidate(f.basename, await app.vault.cachedRead(f))
+		)
+	);
+	log(settings, "Available KB files:", described);
 
 	const prompt = renderPrompt(settings.fileMatchPrompt, {
 		title: metadata.title,
-		keypoints: metadata.keypoints,
-		fileList: fileNames.join("\n"),
+		keypoints: routingSummary(metadata),
+		fileList: described.join("\n"),
 	});
-	const raw = await provider.ask(prompt);
+	const raw = await ask(provider, settings, prompt, "file-match");
 	log(settings, "File match raw response:", raw);
 
 	const reply = parseMatchReply(raw, fileNames);
@@ -145,7 +206,7 @@ async function deriveNewNote(
 			content,
 			fileList: existingBasenames.join("\n"),
 		});
-		const raw = await provider.ask(prompt);
+		const raw = await ask(provider, settings, prompt, "new-note");
 		log(settings, "New note raw response:", raw);
 
 		const parsed = extractJSON(raw);
@@ -247,17 +308,26 @@ async function matchSection(
 	const sections = getSections(targetContent);
 
 	if (sections.length === 0) return "Overview";
-	if (sections.length === 1) return sections[0];
+
+	// A one-section note is a silent catch-all: every link routed to it lands here whether or not
+	// it fits. Logged rather than noticed — the signal that matters is the file choice.
+	if (sections.length === 1) {
+		log(
+			settings,
+			`Only one section in ${targetFileName} — filed under "${sections[0]}" without asking.`
+		);
+		return sections[0];
+	}
 
 	let chosen: string | null = null;
 	try {
 		const prompt = renderPrompt(settings.sectionMatchPrompt, {
 			title: metadata.title,
-			keypoints: metadata.keypoints,
+			keypoints: routingSummary(metadata),
 			sectionList: sections.join("\n"),
 			targetFile: targetFileName,
 		});
-		const raw = await provider.ask(prompt);
+		const raw = await ask(provider, settings, prompt, "section-match");
 		log(settings, "Section match raw response:", raw);
 		const reply = parseMatchReply(raw, sections);
 		if (reply.kind === "match") chosen = resolveMatch(reply.name, sections);
@@ -318,7 +388,7 @@ export async function processLink(
 
 	let choice: FileChoice;
 	try {
-		choice = await chooseKBFile(provider, settings, metadata, kbFiles);
+		choice = await chooseKBFile(app, provider, settings, metadata, kbFiles);
 	} catch (err) {
 		new Notice(
 			`LinkVault: ${err instanceof Error ? err.message : String(err)}`

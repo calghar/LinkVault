@@ -52,6 +52,55 @@ export function getSections(content: string): string[] {
 	return sections;
 }
 
+export function truncate(value: string, max: number): string {
+	return value.length > max ? value.slice(0, max - 3) + "..." : value;
+}
+
+// ---- Candidate presentation ----
+
+// A description ends with its boundary against the nearest note, so a tighter bound would cut
+// the most load-bearing clause.
+export const DESCRIPTION_MAX_CHARS = 300;
+export const MAX_SECTIONS_LISTED = 8;
+
+// Descriptions and headings are model output LinkVault wrote, so they can echo back as a reply.
+// Collapsing denies them their own line; U+2236 RATIO defangs the prefixes but reads the same.
+export function sanitizePromptText(value: string, max: number): string {
+	const collapsed = value.replaceAll(/\s+/g, " ").trim();
+	return truncate(collapsed.replaceAll(/\b(MATCH|NEW)\s*:/gi, "$1∶"), max);
+}
+
+// Any backlink matches because the index note's name is configurable; "->" because hand-written
+// notes use it. The capture requires a non-space character, so a bare arrow yields no match.
+export function extractNoteDescription(content: string): string | null {
+	const match = /^\[\[[^\]]+\]\][ \t]*(?:→|->)[ \t]*(\S.*)$/m.exec(content);
+	return match ? match[1].trim() : null;
+}
+
+// Bare basenames underdetermine the file match — two plausible names leave the model nothing to
+// separate them by. Both of these already exist in the note.
+export function describeCandidate(basename: string, content: string): string {
+	const parts = [basename];
+
+	const description = extractNoteDescription(content);
+	if (description !== null) {
+		parts.push(
+			`— ${sanitizePromptText(description, DESCRIPTION_MAX_CHARS)}`
+		);
+	}
+
+	const sections = getSections(content).slice(0, MAX_SECTIONS_LISTED);
+	if (sections.length > 0) {
+		// Semicolons: headings routinely contain commas and ampersands.
+		const listed = sections
+			.map((s) => sanitizePromptText(s, DESCRIPTION_MAX_CHARS))
+			.join("; ");
+		parts.push(`Sections: ${listed}`);
+	}
+
+	return parts.join(" ");
+}
+
 // Resolves a response to one of `items`, or null when it resolves to none of them.
 //
 // This used to fall back to `items[0]` when nothing matched, which meant every link
