@@ -20,6 +20,7 @@ export interface LinkVaultSettings {
 	provider: LLMProviderType;
 	model: string;
 	ollamaHost: string;
+	ollamaNumCtx: number;
 	customBaseUrl: string;
 	maxTokens: number;
 
@@ -51,18 +52,21 @@ export const DEFAULT_SETTINGS: LinkVaultSettings = {
 	provider: "anthropic",
 	model: DEFAULT_MODELS.anthropic,
 	ollamaHost: "http://localhost:11434",
+	ollamaNumCtx: 8192,
 	customBaseUrl: "",
 	maxTokens: 300,
 
 	extractPrompt: `Extract metadata from this saved link or post.
 Reply ONLY with valid JSON — no markdown fences, no explanation.
 
-{"title": "descriptive title under 60 chars", "keypoints": "one sentence summary under 80 chars"}
+{"title": "descriptive title under 60 chars", "keypoints": "one sentence summary under 80 chars", "kind": "one of: paper, tool, repo, blog post, course, job posting, advisory, report, reference", "domain": "the field it belongs to, three words or fewer"}
 
 Content:
 {{content}}`,
 
 	fileMatchPrompt: `You are filing a saved link into a knowledge base. Each file below covers ONE specific topic.
+
+Each line is a file: its name, then what it collects, then the sections it holds.
 
 Files:
 {{fileList}}
@@ -125,6 +129,11 @@ Reply ONLY with valid JSON — no markdown fences, no explanation:
 	contentTruncateChars: 3000,
 	debugMode: false,
 };
+
+// Ollama allocates a KV cache proportional to num_ctx, so an unbounded value can exhaust the
+// memory of the machine serving it.
+export const MIN_NUM_CTX = 1024;
+export const MAX_NUM_CTX = 131072;
 
 export class LinkVaultSettingTab extends PluginSettingTab {
 	plugin: LinkVaultPlugin;
@@ -311,6 +320,34 @@ export class LinkVaultSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						})
 				);
+
+			new Setting(containerEl)
+				.setName("Context window")
+				.setDesc(
+					`Tokens of context sent to Ollama (num_ctx). Raise it if the KB folder outgrows it. ${MIN_NUM_CTX}–${MAX_NUM_CTX}.`
+				)
+				.addText((text) => {
+					text.setPlaceholder(String(DEFAULT_SETTINGS.ollamaNumCtx))
+						.setValue(String(this.plugin.settings.ollamaNumCtx))
+						.onChange(async (value) => {
+							const num = Number.parseInt(value, 10);
+							if (
+								!Number.isNaN(num) &&
+								num >= MIN_NUM_CTX &&
+								num <= MAX_NUM_CTX
+							) {
+								this.plugin.settings.ollamaNumCtx = num;
+								await this.plugin.saveSettings();
+							}
+						});
+					// Out-of-range input is ignored, so on blur the field is put back to what is
+					// actually stored — otherwise it keeps showing a value that was never saved.
+					text.inputEl.addEventListener("blur", () => {
+						text.setValue(
+							String(this.plugin.settings.ollamaNumCtx)
+						);
+					});
+				});
 		}
 
 		if (this.plugin.settings.provider === "openrouter") {

@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **The model is now shown what each note collects.** The file-match prompt listed bare filenames, so when two names were plausible for a link the model had nothing to separate them by and picked wrong — consistently, not randomly. Each candidate now carries the description after its `[[Index]] →` backlink and its section headings. A note with neither is still listed and still matchable on its name alone. Replies are resolved against note *names* only, exactly as before.
+- **Ollama requests carry explicit generation options.** `temperature: 0` (the model's own default is 0.7, tuned for open-ended writing rather than picking one item from a list), the configured context window, and your **max tokens** setting. Routing is now reproducible run to run.
+- **New "Context window" setting** for Ollama (default 8192, range 1024–131072). Ollama's own default is 4096 whatever the model's real window, which silently truncates the tail of the candidate list as a knowledge base grows. LinkVault now warns when any prompt it sends would exceed the configured window, rather than letting the truncation pass unseen.
+- **Extraction also reports what kind of thing a link is** — paper, tool, repo, blog post, course — and the field it belongs to, and both match steps see them. Sections are usually named by artefact kind ("Key Blogs", "Notable Papers", "Tools & Monitoring"), so the section step was previously choosing on an axis it had never been shown.
+
+Against a 16-note knowledge base with `qwen3:4b-instruct` via Ollama, over 18 cases built from real filed links — 15 with a known correct note, 3 that should be declined:
+
+| | correct | misrouted | declined | correct section |
+| --- | --- | --- | --- | --- |
+| 1.1.0 | 7/15 | 6 | 3/3 | 9/15 |
+| 1.2.0 | 12/15 | 2 | 3/3 | 11/15 |
+
+Misrouting is the failure that matters: a declined link creates a new note you can see and merge, while a misrouted one is buried in the wrong place silently.
+
+Not comparable with the "13–14/15" quoted for 1.1.0 — that knowledge base had 13 notes rather than 16, and its case set was not recorded.
+
+**Descriptions do more of this work than the code does.** Of the improvement above, rewriting the sixteen note descriptions to state what each note collects *and where its boundary lies* ("scanning tools go to `[[Static-Analysis-Fuzzing]]`") accounted for the larger share. A note whose description is vague or absent still routes on its name alone. See [KB structure](docs/kb-structure.md).
+
+### Fixed
+
+- **Your max-tokens setting never reached Ollama.** It was sent only by the Anthropic and OpenRouter providers, so local runs used the server default regardless of what you configured.
+- A note with a single section is filed into it without asking the model, which makes that note a silent catch-all. The bypass is now recorded in debug output.
+
+### Internal
+
+- A longer summary and an article excerpt for the matcher were built, measured and removed: 6/15 on their own against a 7/15 baseline, and no gain at all alongside the richer file list. More prose describes the same axis the summary already covered.
+
 ### Planned
 
 - **Routing confirmation** — a dialog to confirm a new note's name before it is created, offering existing notes as alternatives.

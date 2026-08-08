@@ -57,8 +57,15 @@ marker will no longer be matched into.
 | API key | Provider API key (not needed for Ollama) | — |
 | Model | Model name | `claude-haiku-4-5-20251001` |
 | Ollama host | Ollama instance URL (Ollama only) | `http://localhost:11434` |
+| Context window | Tokens of context sent to Ollama, 1024–131072 (Ollama only) | `8192` |
 | Custom base URL | Override the default API endpoint | — |
 | Max tokens | Max tokens for LLM responses | `300` |
+
+Ollama requests carry `temperature: 0`, the **context window** above as `num_ctx`, and **max
+tokens** as `num_predict`. Left to Ollama's own defaults these are wrong for routing: the model's
+sampling temperature is tuned for open-ended generation, and the server's context window is 4096
+regardless of the model's real one — large enough to silently truncate the candidate list for a KB
+of any size. Raise the context window if LinkVault warns that the match prompt exceeds it.
 
 ### Prompts (advanced)
 
@@ -66,7 +73,7 @@ All prompts are customisable with template variables:
 
 | Prompt | Variables |
 | --- | --- |
-| Extract prompt | `{{content}}` |
+| Extract prompt | `{{content}}` — must return `title`, `keypoints`, `kind` and `domain` |
 | File match prompt | `{{title}}`, `{{keypoints}}`, `{{fileList}}` |
 | Section match prompt | `{{title}}`, `{{keypoints}}`, `{{sectionList}}`, `{{targetFile}}` |
 | New note prompt | `{{title}}`, `{{keypoints}}`, `{{content}}`, `{{fileList}}` |
@@ -75,6 +82,17 @@ An unrecognised `{{variable}}` is left in the prompt verbatim rather than replac
 nothing, so a typo is visible in the raw request under **Debug mode**.
 
 Content sent to the LLM is truncated to a configurable limit (default: 3000 chars).
+
+`{{keypoints}}` carries the summary plus the link's artefact kind and field —
+`Prompt injection in webmail. [blog post, web security]`. Sections are usually named by artefact
+kind ("Key Blogs", "Notable Papers", "Tools & Monitoring"), so without those the section step is
+choosing on an axis it was never shown. An extract prompt that omits `kind` and `domain` still
+works; the summary is then passed alone. The table cell always carries the summary only.
+
+`{{fileList}}` gives each candidate on one line: its name, the description after its `[[Index]] →`
+backlink, and its section headings. A note with neither is listed by name alone and stays
+matchable. Replies are still resolved against note *names* only — naming a description or a
+heading resolves to nothing.
 
 The two match prompts must keep asking for the `MATCH:` / `NEW:` / `NONE` contract described
 in [Routing](routing.md). A customised prompt that asks for a bare filename still works, but

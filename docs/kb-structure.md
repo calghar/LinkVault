@@ -31,6 +31,38 @@ Each KB file represents a topic and contains H2 sections with link tables:
 - New rows are inserted after the separator row of the matched section
 - A section with no table yet gets one built for it
 
+## Descriptions decide where links land
+
+The line after the title — `[[Index]] → what this note collects` — is what LinkVault shows the
+model when it picks a note. It is the single biggest lever you have over routing accuracy, ahead
+of the model you choose. A note without one is still matchable, but only on its filename.
+
+Write three things, in this order:
+
+1. **The subject.** What the note is about.
+2. **The kinds of thing it collects** — papers, tool repos, vendor blogs, courses.
+3. **The boundary against its nearest neighbour**, which is what settles a close call.
+
+The third does the work. Two notes that both sound plausible for a link are exactly where routing
+goes wrong, and the boundary clause is the only thing that separates them:
+
+```markdown
+[[Index]] → Tools and frameworks that find bugs in code: static analysis, fuzzing harnesses,
+LLM-assisted and automated bug finding, supply-chain scanning. Policy and prioritisation goes to
+[[Vulnerability-Management]].
+```
+
+Without that last sentence, a repo doing LLM-assisted bug finding routes to whichever note
+mentions LLMs. With it, it lands here.
+
+Keep descriptions under 300 characters — that is the bound LinkVault sends. Since the boundary
+clause comes last, a longer description loses precisely the part that matters. Wiki-links inside
+the description are fine and keep your graph intact.
+
+A note with only one section is a silent catch-all: every link routed there lands in the same
+place whether or not it fits. If a note is accumulating unrelated links, it usually needs either
+more sections or a sharper description.
+
 Notes on unrelated topics follow the same shape:
 
 ```markdown
